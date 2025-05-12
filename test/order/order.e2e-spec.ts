@@ -121,8 +121,8 @@ describe("OrderController (e2e)", () => {
     it("PATCH /:id/status should update order status", () => {
       const order = fixtures
         .getOrders()
-        .find((o) => o.status === OrderStatus.PENDING);
-      const newStatus = OrderStatus.PREPARING;
+        .find((o) => o.status === OrderStatus.READY);
+      const newStatus = OrderStatus.DELIVERED;
 
       return request(app.getHttpServer())
         .patch(`/api/orders/${order.id}/status`)
