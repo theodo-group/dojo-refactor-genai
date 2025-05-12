@@ -10,6 +10,7 @@ import { CustomerService } from "../customer/customer.service";
 import { ProductService } from "../product/product.service";
 import { CreateOrderDto } from "./dto/create-order.dto";
 import { UpdateOrderDto } from "./dto/update-order.dto";
+import { LoyaltyService } from "../loyalty/loyalty.service";
 
 @Injectable()
 export class OrderService {
@@ -17,7 +18,8 @@ export class OrderService {
     @InjectRepository(Order)
     private orderRepository: Repository<Order>,
     private customerService: CustomerService,
-    private productService: ProductService
+    private productService: ProductService,
+    private loyaltyService: LoyaltyService
   ) {}
 
   async findAll(status?: OrderStatus): Promise<Order[]> {
@@ -73,10 +75,16 @@ export class OrderService {
       }
     }
 
+    // Apply loyalty discount if customer is eligible
+    const discountedAmount = await this.loyaltyService.calculateNextOrderAmount(
+      customerId,
+      totalAmount
+    );
+
     const order = this.orderRepository.create({
       customer,
       products,
-      totalAmount,
+      totalAmount: discountedAmount,
       notes,
     });
 

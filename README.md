@@ -10,6 +10,7 @@ This project demonstrates a NestJS application with end-to-end tests using globa
 
 - NestJS application for a mock restaurant management API
 - Three main controllers: Customer, Order, Product
+- A fourth controller : Loyalty : meant to show the issue with new tests
 - Data models for customer, order, product
 - 15+ RESTful API endpoints
 - 20+ end-to-end tests with Supertest
@@ -52,7 +53,8 @@ The current implementation uses global fixtures for all tests. When we need to u
   - `/customer` - Customer module, controller, service, DTOs
   - `/product` - Product module, controller, service, DTOs
   - `/order` - Order module, controller, service, DTOs
+  - `/loyalty` - Loyalty service module, controller, service, DTOs - the new service with the first issues of global fixtures
   - `/entities` - Database entity definitions
   - `/migrations` - Database migrations
-- `/test` - End-to-end tests
+  - `/test` - End-to-end tests
   - `/fixtures` - Global test fixtures
