@@ -42,32 +42,70 @@ describe("LoyaltyService (e2e)", () => {
 
   describe("Loyalty discounts", () => {
     it("should apply 10% discount for customers with more than 3 orders", async () => {
-      // Get a customer from fixtures
-      const customer = fixtures.getCustomers()[0];
+      // Use Bob Johnson who has only 1 order initially (the pending one we added)
+      const customer = fixtures.getCustomers()[2]; // Bob Johnson
       const products = fixtures.getProducts().slice(0, 2);
-      const originalTotal = 25.99;
+      const originalTotal = 27.98; // Margherita (12.99) + Pepperoni (14.99)
 
-      // Create an order using the orderService directly
-      const createOrderDto: CreateOrderDto = {
+      // Create 5 more orders to make customer eligible for 10% discount (total 6 orders)
+      for (let i = 0; i < 5; i++) {
+        const createOrderDto: CreateOrderDto = {
+          customerId: customer.id,
+          productIds: [products[0].id], // Just Margherita
+          totalAmount: 12.99,
+          notes: `Loyalty test order ${i + 1}`,
+        };
+        await orderService.create(createOrderDto);
+      }
+
+      // Now create the 7th order (should get 10% discount)
+      const finalOrderDto: CreateOrderDto = {
         customerId: customer.id,
         productIds: products.map((p) => p.id),
         totalAmount: originalTotal,
-        notes: "Test loyalty discount",
+        notes: "Final order with discount",
       };
 
-      // Create the order - loyalty discount should be applied
-      const order = await orderService.create(createOrderDto);
+      const order = await orderService.create(finalOrderDto);
 
       // Verify the discount was applied (should be 10% less)
       const expectedTotal = parseFloat((originalTotal * 0.9).toFixed(2));
       expect(order.totalAmount).toBe(expectedTotal);
+    });
 
-      // This will cause issues in other tests since the shared fixtures
-      // expect specific order totals that are now changed
+    it("should apply progressive discounts based on order count", async () => {
+      // Use Charlie Test who has no orders
+      const customer = fixtures.getCustomers()[4]; // Charlie Test
+      const products = fixtures.getProducts().slice(0, 2);
+      const originalTotal = 27.98; // 12.99 + 14.99
 
-      // Modify a fixture order total to cause problems in other tests
-      const fixtureOrder = fixtures.getOrders()[0];
-      fixtureOrder.totalAmount = 5.99; // This will break other tests
+      const createOrderDto: CreateOrderDto = {
+        customerId: customer.id,
+        productIds: products.map((p) => p.id),
+        totalAmount: originalTotal,
+        notes: "Testing progressive discounts",
+      };
+
+      // Create first 3 orders (no discount - count is 0, 1, 2 when creating each)
+      for (let i = 0; i < 3; i++) {
+        const order = await orderService.create(createOrderDto);
+        expect(order.totalAmount).toBe(originalTotal); // No discount
+      }
+
+      // 4th order should get 5% discount (customer now has 3 existing orders when creating 4th)
+      const fourthOrder = await orderService.create(createOrderDto);
+      const expected5Percent = parseFloat((originalTotal * 0.95).toFixed(2));
+      expect(fourthOrder.totalAmount).toBe(expected5Percent);
+
+      // Create 2 more orders to reach 6 orders total
+      for (let i = 0; i < 2; i++) {
+        await orderService.create(createOrderDto);
+      }
+
+      // 7th order should get 10% discount (customer now has 6 existing orders when creating 7th)
+      const seventhOrder = await orderService.create(createOrderDto);
+      const expected10Percent = parseFloat((originalTotal * 0.9).toFixed(2));
+      expect(seventhOrder.totalAmount).toBe(expected10Percent);
     });
   });
 });

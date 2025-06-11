@@ -9,8 +9,12 @@ export class ProductController {
   constructor(private readonly productService: ProductService) {}
 
   @Get()
-  async findAll(@Query('category') category?: string): Promise<Product[]> {
-    return this.productService.findAll(category);
+  async findAll(
+    @Query('category') category?: string,
+    @Query('available') available?: string
+  ): Promise<Product[]> {
+    const availableBool = available === 'false' ? false : available === 'true' ? true : undefined;
+    return this.productService.findAll(category, availableBool);
   }
 
   @Get(':id')

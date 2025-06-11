@@ -48,11 +48,22 @@ export class OrderService {
     return order;
   }
 
-  async findByCustomer(customerId: string): Promise<Order[]> {
-    return this.orderRepository.find({
-      where: { customer: { id: customerId } },
-      relations: ["products", "customer"],
-    });
+  async findByCustomer(customerId: string, dateRange?: { start?: Date; end?: Date }): Promise<Order[]> {
+    const query = this.orderRepository
+      .createQueryBuilder("order")
+      .leftJoinAndSelect("order.customer", "customer")
+      .leftJoinAndSelect("order.products", "products")
+      .where("order.customer.id = :customerId", { customerId });
+
+    if (dateRange?.start) {
+      query.andWhere("order.createdAt >= :start", { start: dateRange.start });
+    }
+    
+    if (dateRange?.end) {
+      query.andWhere("order.createdAt <= :end", { end: dateRange.end });
+    }
+
+    return query.getMany();
   }
 
   async create(createOrderDto: CreateOrderDto): Promise<Order> {
@@ -73,6 +84,17 @@ export class OrderService {
           `Product ${product.name} is not available`
         );
       }
+    }
+
+    // Validate total amount matches product prices
+    const calculatedTotal = products.reduce((sum, product) => sum + Number(product.price), 0);
+    const roundedCalculated = Math.round(calculatedTotal * 100) / 100;
+    const roundedProvided = Math.round(totalAmount * 100) / 100;
+    
+    if (Math.abs(roundedProvided - roundedCalculated) > 0.01) {
+      throw new BadRequestException(
+        `Total amount ${totalAmount} does not match product prices total ${roundedCalculated}`
+      );
     }
 
     // Apply loyalty discount if customer is eligible
