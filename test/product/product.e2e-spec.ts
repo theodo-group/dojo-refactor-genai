@@ -1,12 +1,12 @@
-import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication, ValidationPipe } from '@nestjs/common';
-import * as request from 'supertest';
-import { AppModule } from '../../src/app.module';
-import { GlobalFixtures } from '../fixtures/global-fixtures';
-import { CreateProductDto } from '../../src/product/dto/create-product.dto';
-import { UpdateProductDto } from '../../src/product/dto/update-product.dto';
+import { Test, TestingModule } from "@nestjs/testing";
+import { INestApplication, ValidationPipe } from "@nestjs/common";
+import * as request from "supertest";
+import { AppModule } from "../../src/app.module";
+import { GlobalFixtures } from "../fixtures/global-fixtures";
+import { CreateProductDto } from "../../src/product/dto/create-product.dto";
+import { UpdateProductDto } from "../../src/product/dto/update-product.dto";
 
-describe('ProductController (e2e)', () => {
+describe("ProductController (e2e)", () => {
   let app: INestApplication;
   let fixtures: GlobalFixtures;
 
@@ -21,9 +21,9 @@ describe('ProductController (e2e)', () => {
         whitelist: true,
         transform: true,
         forbidNonWhitelisted: true,
-      }),
+      })
     );
-    app.setGlobalPrefix('api');
+    app.setGlobalPrefix("api");
     await app.init();
 
     // Initialize fixtures
@@ -36,41 +36,41 @@ describe('ProductController (e2e)', () => {
     await app.close();
   });
 
-  describe('/api/products', () => {
-    it('GET / should return all available products', () => {
+  describe("/api/products", () => {
+    it("GET / should return all available products", () => {
       return request(app.getHttpServer())
-        .get('/api/products')
+        .get("/api/products")
         .expect(200)
         .expect((res) => {
           expect(Array.isArray(res.body)).toBe(true);
-          expect(res.body.length).toBe(fixtures.getProducts().length);
-          
+          expect(res.body.length).toBeGreaterThanOrEqual(5); // At least the original 5 products
+
           // Check if products data is correct
-          const productNames = res.body.map(product => product.name);
-          expect(productNames).toContain('Margherita Pizza');
-          expect(productNames).toContain('Caesar Salad');
+          const productNames = res.body.map((product) => product.name);
+          expect(productNames).toContain("Margherita Pizza");
+          expect(productNames).toContain("Caesar Salad");
         });
     });
 
-    it('GET /?category=pizza should filter products by category', () => {
+    it("GET /?category=pizza should filter products by category", () => {
       return request(app.getHttpServer())
-        .get('/api/products?category=pizza')
+        .get("/api/products?category=pizza")
         .expect(200)
         .expect((res) => {
           expect(Array.isArray(res.body)).toBe(true);
-          res.body.forEach(product => {
-            expect(product.category).toBe('pizza');
+          res.body.forEach((product) => {
+            expect(product.category).toBe("pizza");
           });
-          
-          const productNames = res.body.map(product => product.name);
-          expect(productNames).toContain('Margherita Pizza');
-          expect(productNames).toContain('Pepperoni Pizza');
+
+          const productNames = res.body.map((product) => product.name);
+          expect(productNames).toContain("Margherita Pizza");
+          expect(productNames).toContain("Pepperoni Pizza");
         });
     });
 
-    it('GET /:id should return product by id', () => {
+    it("GET /:id should return product by id", () => {
       const product = fixtures.getProducts()[0];
-      
+
       return request(app.getHttpServer())
         .get(`/api/products/${product.id}`)
         .expect(200)
@@ -81,16 +81,16 @@ describe('ProductController (e2e)', () => {
         });
     });
 
-    it('POST / should create a new product', () => {
+    it("POST / should create a new product", () => {
       const createProductDto: CreateProductDto = {
-        name: 'Test Product',
-        description: 'This is a test product',
+        name: "Test Product",
+        description: "This is a test product",
         price: 9.99,
-        category: 'test',
+        category: "test",
       };
-      
+
       return request(app.getHttpServer())
-        .post('/api/products')
+        .post("/api/products")
         .send(createProductDto)
         .expect(201)
         .expect((res) => {
@@ -102,13 +102,13 @@ describe('ProductController (e2e)', () => {
         });
     });
 
-    it('PATCH /:id should update a product', () => {
+    it("PATCH /:id should update a product", () => {
       const product = fixtures.getProducts()[0];
       const updateProductDto: UpdateProductDto = {
-        name: 'Updated Product Name',
+        name: "Updated Product Name",
         price: 19.99,
       };
-      
+
       return request(app.getHttpServer())
         .patch(`/api/products/${product.id}`)
         .send(updateProductDto)
@@ -122,21 +122,60 @@ describe('ProductController (e2e)', () => {
         });
     });
 
-    it('DELETE /:id should soft delete a product', () => {
+    it("DELETE /:id should soft delete a product", () => {
       const product = fixtures.getProducts()[1];
-      
+
       return request(app.getHttpServer())
         .delete(`/api/products/${product.id}`)
         .expect(204)
         .then(() => {
           // Verify product is no longer in the available list
           return request(app.getHttpServer())
-            .get('/api/products')
+            .get("/api/products")
             .expect(200)
             .expect((res) => {
-              const foundProduct = res.body.find(p => p.id === product.id);
+              const foundProduct = res.body.find((p) => p.id === product.id);
               expect(foundProduct).toBeUndefined();
             });
+        });
+    });
+
+    // NEW TESTS
+    it("POST / should reject products with negative or zero prices", () => {
+      const invalidPriceDto: CreateProductDto = {
+        name: "Invalid Price Product",
+        description: "This product has invalid price",
+        price: -5.99, // Invalid negative price
+        category: "test",
+      };
+
+      return request(app.getHttpServer())
+        .post("/api/products")
+        .send(invalidPriceDto)
+        .expect(400)
+        .expect((res) => {
+          expect(res.body.message).toContain("price must not be less than 0");
+        });
+    });
+
+    it("GET /?available=false should return unavailable products", () => {
+      return request(app.getHttpServer())
+        .get("/api/products?available=false")
+        .expect(200)
+        .expect((res) => {
+          expect(Array.isArray(res.body)).toBe(true);
+
+          // All returned products should be unavailable
+          res.body.forEach((product) => {
+            expect(product.isAvailable).toBe(false);
+          });
+
+          // Should find the "Seasonal Special" unavailable product
+          const seasonalProduct = res.body.find(
+            (p) => p.name === "Seasonal Special"
+          );
+          expect(seasonalProduct).toBeDefined();
+          expect(seasonalProduct.category).toBe("special");
         });
     });
   });

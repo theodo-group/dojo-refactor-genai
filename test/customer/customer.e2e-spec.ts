@@ -142,5 +142,47 @@ describe('CustomerController (e2e)', () => {
             });
         });
     });
+
+    // NEW TESTS
+    it('POST / should reject duplicate email addresses', () => {
+      const existingCustomer = fixtures.getCustomers()[0];
+      const duplicateEmailDto: CreateCustomerDto = {
+        name: 'Duplicate Test',
+        email: existingCustomer.email, // Using existing email
+        phone: '999-999-9999',
+        address: '999 Test St',
+      };
+      
+      return request(app.getHttpServer())
+        .post('/api/customers')
+        .send(duplicateEmailDto)
+        .expect(409) // Conflict status
+        .expect((res) => {
+          expect(res.body.message).toContain('already exists');
+        });
+    });
+
+    it('GET /?include_orders=true should return customers with order history', () => {
+      return request(app.getHttpServer())
+        .get('/api/customers?include_orders=true')
+        .expect(200)
+        .expect((res) => {
+          expect(Array.isArray(res.body)).toBe(true);
+          expect(res.body.length).toBeGreaterThan(0);
+          
+          // Check if customers have orders property
+          res.body.forEach(customer => {
+            expect(customer.orders).toBeDefined();
+            expect(Array.isArray(customer.orders)).toBe(true);
+          });
+          
+          // Find a customer with orders and verify structure
+          const customerWithOrders = res.body.find(c => c.orders.length > 0);
+          expect(customerWithOrders).toBeDefined();
+          expect(customerWithOrders.orders[0]).toHaveProperty('id');
+          expect(customerWithOrders.orders[0]).toHaveProperty('totalAmount');
+          expect(customerWithOrders.orders[0]).toHaveProperty('status');
+        });
+    });
   });
 });

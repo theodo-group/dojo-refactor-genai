@@ -4,6 +4,7 @@ import * as request from "supertest";
 import { AppModule } from "../../src/app.module";
 import { GlobalFixtures } from "../fixtures/global-fixtures";
 import { CreateOrderDto } from "../../src/order/dto/create-order.dto";
+import { UpdateOrderDto } from "../../src/order/dto/update-order.dto";
 import { OrderStatus } from "../../src/entities/order.entity";
 
 describe("OrderController (e2e)", () => {
@@ -95,13 +96,14 @@ describe("OrderController (e2e)", () => {
     });
 
     it("POST / should create a new order", () => {
-      const customer = fixtures.getCustomers()[0];
+      const customer = fixtures.getCustomers()[1]; // Jane Smith has no existing orders, no discount
       const products = fixtures.getProducts().slice(0, 2);
+      // Margherita Pizza (12.99) + Pepperoni Pizza (14.99) = 27.98
 
       const createOrderDto: CreateOrderDto = {
         customerId: customer.id,
         productIds: products.map((p) => p.id),
-        totalAmount: 30.5,
+        totalAmount: 27.98,
         notes: "Test order notes",
       };
 
@@ -166,6 +168,82 @@ describe("OrderController (e2e)", () => {
             .expect((res) => {
               expect(res.body.status).toBe(OrderStatus.CANCELLED);
             });
+        });
+    });
+
+    // NEW TESTS
+    it("POST / should validate total amount matches product prices", () => {
+      const customer = fixtures.getCustomers()[1]; // Jane Smith - no existing orders
+      const products = fixtures.getProducts().slice(0, 2); // First 2 products: 12.99 + 14.99 = 27.98
+
+      const invalidTotalDto: CreateOrderDto = {
+        customerId: customer.id,
+        productIds: products.map((p) => p.id),
+        totalAmount: 50.0, // Wrong total - should be 27.98
+        notes: "Invalid total test",
+      };
+
+      return request(app.getHttpServer())
+        .post("/api/orders")
+        .send(invalidTotalDto)
+        .expect(400)
+        .expect((res) => {
+          expect(res.body.message).toContain("does not match product prices");
+        });
+    });
+
+    it("GET /customer/:customerId should filter orders by date range", () => {
+      const customer = fixtures.getCustomers()[0]; // John Doe has multiple orders
+
+      // Get orders from the last 12 days (should include some but not all)
+      const endDate = new Date().toISOString().split("T")[0];
+      const startDate = new Date(Date.now() - 12 * 24 * 60 * 60 * 1000)
+        .toISOString()
+        .split("T")[0];
+
+      return request(app.getHttpServer())
+        .get(
+          `/api/orders/customer/${customer.id}?start_date=${startDate}&end_date=${endDate}`
+        )
+        .expect(200)
+        .expect((res) => {
+          expect(Array.isArray(res.body)).toBe(true);
+
+          // All orders should be for this customer
+          res.body.forEach((order) => {
+            expect(order.customer.id).toBe(customer.id);
+
+            // All orders should be within date range
+            const orderDate = new Date(order.createdAt);
+            expect(orderDate.getTime()).toBeGreaterThanOrEqual(
+              new Date(startDate).getTime()
+            );
+            expect(orderDate.getTime()).toBeLessThanOrEqual(
+              new Date(endDate).getTime()
+            );
+          });
+        });
+    });
+
+    it("PATCH /:id should prevent updating orders with invalid status transitions", () => {
+      // Try to update a delivered order (should fail)
+      const deliveredOrder = fixtures
+        .getOrders()
+        .find((o) => o.status === OrderStatus.DELIVERED);
+
+      const invalidUpdateDto: UpdateOrderDto = {
+        notes: "Trying to modify delivered order",
+        totalAmount: 99.99,
+      };
+
+      return request(app.getHttpServer())
+        .patch(`/api/orders/${deliveredOrder.id}`)
+        .send(invalidUpdateDto)
+        .expect(400)
+        .expect((res) => {
+          expect(res.body.message).toContain(
+            "Cannot update order that is already delivered"
+          );
         });
     });
   });
