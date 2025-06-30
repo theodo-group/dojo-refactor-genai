@@ -1,4 +1,13 @@
-import { IsArray, IsNotEmpty, IsNumber, IsOptional, IsString, IsUUID, Min } from 'class-validator';
+import {
+  IsArray,
+  IsNotEmpty,
+  IsNumber,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Min,
+  IsBoolean,
+} from "class-validator";
 
 export class CreateOrderDto {
   @IsNotEmpty()
@@ -7,7 +16,7 @@ export class CreateOrderDto {
 
   @IsNotEmpty()
   @IsArray()
-  @IsUUID('4', { each: true })
+  @IsUUID("4", { each: true })
   productIds: string[];
 
   @IsNotEmpty()
@@ -18,4 +27,22 @@ export class CreateOrderDto {
   @IsOptional()
   @IsString()
   notes?: string;
+
+  // Advanced loyalty features
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  usePoints?: number;
+
+  @IsOptional()
+  @IsUUID()
+  referredBy?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  isBirthdayOrder?: boolean;
+
+  @IsOptional()
+  @IsString()
+  groupOrderId?: string;
 }
