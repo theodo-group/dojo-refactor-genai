@@ -19,8 +19,22 @@ export class OrderController {
   }
 
   @Get('customer/:customerId')
-  async findByCustomer(@Param('customerId') customerId: string): Promise<Order[]> {
-    return this.orderService.findByCustomer(customerId);
+  async findByCustomer(
+    @Param('customerId') customerId: string,
+    @Query('start_date') startDate?: string,
+    @Query('end_date') endDate?: string
+  ): Promise<Order[]> {
+    const dateRange: { start?: Date; end?: Date } = {};
+    
+    if (startDate) {
+      dateRange.start = new Date(startDate);
+    }
+    
+    if (endDate) {
+      dateRange.end = new Date(endDate);
+    }
+    
+    return this.orderService.findByCustomer(customerId, Object.keys(dateRange).length > 0 ? dateRange : undefined);
   }
 
   @Post()

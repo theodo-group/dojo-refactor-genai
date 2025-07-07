@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Customer } from '../entities/customer.entity';
@@ -49,6 +49,15 @@ export class CustomerService {
   }
 
   async create(createCustomerDto: CreateCustomerDto): Promise<Customer> {
+    // Check for duplicate email
+    const existingCustomer = await this.customerRepository.findOne({
+      where: { email: createCustomerDto.email }
+    });
+    
+    if (existingCustomer) {
+      throw new ConflictException(`Customer with email ${createCustomerDto.email} already exists`);
+    }
+    
     const customer = this.customerRepository.create(createCustomerDto);
     return this.customerRepository.save(customer);
   }

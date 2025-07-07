@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Product } from '../entities/product.entity';
@@ -12,13 +12,21 @@ export class ProductService {
     private productRepository: Repository<Product>,
   ) {}
 
-  async findAll(category?: string): Promise<Product[]> {
+  async findAll(category?: string, available?: boolean): Promise<Product[]> {
+    const whereCondition: any = {};
+    
     if (category) {
-      return this.productRepository.find({
-        where: { category, isAvailable: true },
-      });
+      whereCondition.category = category;
     }
-    return this.productRepository.find({ where: { isAvailable: true } });
+    
+    if (available !== undefined) {
+      whereCondition.isAvailable = available;
+    } else {
+      // Default behavior: only show available products
+      whereCondition.isAvailable = true;
+    }
+    
+    return this.productRepository.find({ where: whereCondition });
   }
 
   async findOne(id: string): Promise<Product> {
@@ -34,6 +42,11 @@ export class ProductService {
   }
 
   async create(createProductDto: CreateProductDto): Promise<Product> {
+    // Validate price
+    if (createProductDto.price <= 0) {
+      throw new BadRequestException('Product price must be greater than zero');
+    }
+    
     const product = this.productRepository.create(createProductDto);
     return this.productRepository.save(product);
   }
