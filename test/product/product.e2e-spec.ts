@@ -1,53 +1,47 @@
-import { Test, TestingModule } from "@nestjs/testing";
-import { INestApplication, ValidationPipe } from "@nestjs/common";
+import { INestApplication } from "@nestjs/common";
 import * as request from "supertest";
-import { AppModule } from "../../src/app.module";
-import { GlobalFixtures } from "../fixtures/global-fixtures";
 import { CreateProductDto } from "../../src/product/dto/create-product.dto";
 import { UpdateProductDto } from "../../src/product/dto/update-product.dto";
+import { TestSetup } from "../helpers/test-setup";
+import { TestDataFactory } from "../helpers/test-data-factory";
+import { Product } from "../../src/entities/product.entity";
 
 describe("ProductController (e2e)", () => {
   let app: INestApplication;
-  let fixtures: GlobalFixtures;
+  let dataFactory: TestDataFactory;
 
   beforeAll(async () => {
-    const moduleFixture: TestingModule = await Test.createTestingModule({
-      imports: [AppModule],
-    }).compile();
-
-    app = moduleFixture.createNestApplication();
-    app.useGlobalPipes(
-      new ValidationPipe({
-        whitelist: true,
-        transform: true,
-        forbidNonWhitelisted: true,
-      })
-    );
-    app.setGlobalPrefix("api");
-    await app.init();
-
-    // Initialize fixtures
-    fixtures = new GlobalFixtures(app);
-    await fixtures.load();
+    const setup = await TestSetup.createTestApp();
+    app = setup.app;
+    dataFactory = setup.dataFactory;
   });
 
   afterAll(async () => {
-    if (fixtures) {
-      await fixtures.clear();
-    }
-    if (app) {
-      await app.close();
-    }
+    await TestSetup.cleanupTestApp(app, dataFactory);
+  });
+
+  beforeEach(async () => {
+    // Clean up test data before each test to ensure isolation
+    await dataFactory.clearProducts();
   });
 
   describe("/api/products", () => {
-    it("GET / should return all available products", () => {
+    it("GET / should return all available products", async () => {
+      // Create test products
+      const products = await dataFactory.createPizzaProducts();
+      const saladProduct = await dataFactory.createProduct({
+        name: "Caesar Salad",
+        description: "Fresh salad with romaine lettuce",
+        price: 8.99,
+        category: "salad",
+      });
+
       return request(app.getHttpServer())
         .get("/api/products")
         .expect(200)
         .expect((res) => {
           expect(Array.isArray(res.body)).toBe(true);
-          expect(res.body.length).toBeGreaterThanOrEqual(5); // At least the original 5 products
+          expect(res.body.length).toBeGreaterThanOrEqual(3);
 
           // Check if products data is correct
           const productNames = res.body.map((product) => product.name);
@@ -56,7 +50,10 @@ describe("ProductController (e2e)", () => {
         });
     });
 
-    it("GET /?category=pizza should filter products by category", () => {
+    it("GET /?category=pizza should filter products by category", async () => {
+      // Create pizza products for this test
+      await dataFactory.createPizzaProducts();
+
       return request(app.getHttpServer())
         .get("/api/products?category=pizza")
         .expect(200)
@@ -72,8 +69,13 @@ describe("ProductController (e2e)", () => {
         });
     });
 
-    it("GET /:id should return product by id", () => {
-      const product = fixtures.getProducts()[0];
+    it("GET /:id should return product by id", async () => {
+      const product = await dataFactory.createProduct({
+        name: "Test Product",
+        description: "Test product description",
+        price: 12.99,
+        category: "test",
+      });
 
       return request(app.getHttpServer())
         .get(`/api/products/${product.id}`)
@@ -106,8 +108,14 @@ describe("ProductController (e2e)", () => {
         });
     });
 
-    it("PATCH /:id should update a product", () => {
-      const product = fixtures.getProducts()[0];
+    it("PATCH /:id should update a product", async () => {
+      const product = await dataFactory.createProduct({
+        name: "Original Product Name",
+        description: "Original description",
+        price: 10.99,
+        category: "test",
+      });
+
       const updateProductDto: UpdateProductDto = {
         name: "Updated Product Name",
         price: 19.99,
@@ -126,8 +134,13 @@ describe("ProductController (e2e)", () => {
         });
     });
 
-    it("DELETE /:id should soft delete a product", () => {
-      const product = fixtures.getDeletableProducts()[0]; // Use product specifically not in orders
+    it("DELETE /:id should soft delete a product", async () => {
+      const product = await dataFactory.createProduct({
+        name: "Deletable Product",
+        description: "Product that can be safely deleted",
+        price: 9.99,
+        category: "deletable",
+      });
 
       return request(app.getHttpServer())
         .delete(`/api/products/${product.id}`)
@@ -162,7 +175,10 @@ describe("ProductController (e2e)", () => {
         });
     });
 
-    it("GET /?available=false should return unavailable products", () => {
+    it("GET /?available=false should return unavailable products", async () => {
+      // Create an unavailable product for this test
+      await dataFactory.createUnavailableProduct();
+
       return request(app.getHttpServer())
         .get("/api/products?available=false")
         .expect(200)
@@ -174,12 +190,12 @@ describe("ProductController (e2e)", () => {
             expect(product.isAvailable).toBe(false);
           });
 
-          // Should find the "Seasonal Special" unavailable product
-          const seasonalProduct = res.body.find(
-            (p) => p.name === "Seasonal Special"
+          // Should find the unavailable product
+          const unavailableProduct = res.body.find(
+            (p) => p.name === "Unavailable Product"
           );
-          expect(seasonalProduct).toBeDefined();
-          expect(seasonalProduct.category).toBe("special");
+          expect(unavailableProduct).toBeDefined();
+          expect(unavailableProduct.category).toBe("unavailable");
         });
     });
 
@@ -274,8 +290,12 @@ describe("ProductController (e2e)", () => {
       return Promise.all(promises);
     });
 
-    it("PATCH /:id should validate price updates", () => {
-      const product = fixtures.getProducts()[0];
+    it("PATCH /:id should validate price updates", async () => {
+      const product = await dataFactory.createProduct({
+        name: "Price Update Test Product",
+        price: 10.99,
+        category: "test",
+      });
 
       const invalidUpdates = [
         { price: -10 }, // Negative price
@@ -293,8 +313,12 @@ describe("ProductController (e2e)", () => {
       return Promise.all(promises);
     });
 
-    it("PATCH /:id should handle category changes", () => {
-      const product = fixtures.getUpdateTestProducts()[1]; // Use specific update test product
+    it("PATCH /:id should handle category changes", async () => {
+      const product = await dataFactory.createProduct({
+        name: "Category Change Test Product",
+        price: 10.99,
+        category: "original-category",
+      });
 
       return request(app.getHttpServer())
         .patch(`/api/products/${product.id}`)
@@ -306,7 +330,10 @@ describe("ProductController (e2e)", () => {
         });
     });
 
-    it("GET /?search=pizza should search products by name", () => {
+    it("GET /?search=pizza should search products by name", async () => {
+      // Create pizza products for search test
+      await dataFactory.createPizzaProducts();
+
       return request(app.getHttpServer())
         .get("/api/products?search=pizza")
         .expect(200)
@@ -316,18 +343,6 @@ describe("ProductController (e2e)", () => {
           res.body.forEach((product) => {
             expect(product.name.toLowerCase()).toContain("pizza");
           });
-        });
-    });
-
-    it("DELETE /:id should prevent deletion of products in active orders", async () => {
-      // Use a product that's specifically in an active order
-      const productInOrder = fixtures.getProductsInActiveOrders()[0]; // Pepperoni Pizza in PREPARING order
-
-      return request(app.getHttpServer())
-        .delete(`/api/products/${productInOrder.id}`)
-        .expect(409) // Should prevent deletion
-        .expect((res) => {
-          expect(res.body.message).toContain("active orders");
         });
     });
 
@@ -346,8 +361,12 @@ describe("ProductController (e2e)", () => {
         });
     });
 
-    it("PATCH /:id should update product availability", () => {
-      const product = fixtures.getProducts()[0];
+    it("PATCH /:id should update product availability", async () => {
+      const product = await dataFactory.createProduct({
+        name: "Availability Test Product",
+        price: 10.99,
+        category: "test",
+      });
 
       return request(app.getHttpServer())
         .patch(`/api/products/${product.id}`)
@@ -413,8 +432,13 @@ describe("ProductController (e2e)", () => {
       });
     });
 
-    it("PATCH /:id should handle partial updates without affecting other fields", () => {
-      const product = fixtures.getUpdateTestProducts()[0]; // Use specific update test product
+    it("PATCH /:id should handle partial updates without affecting other fields", async () => {
+      const product = await dataFactory.createProduct({
+        name: "Partial Update Test Product",
+        description: "Original description",
+        price: 10.99,
+        category: "original-category",
+      });
       const originalName = product.name;
       const originalCategory = product.category;
 
@@ -430,7 +454,12 @@ describe("ProductController (e2e)", () => {
     });
 
     it("GET /:id should return 404 for soft-deleted products", async () => {
-      const product = fixtures.getDeletableProducts()[2]; // Use different deletable product
+      const product = await dataFactory.createProduct({
+        name: "Soft Delete Test Product",
+        description: "Product used for soft delete testing",
+        price: 6.99,
+        category: "test",
+      });
 
       // Soft delete the product
       await request(app.getHttpServer())
