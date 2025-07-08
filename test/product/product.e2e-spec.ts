@@ -2,9 +2,9 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import * as request from 'supertest';
 import { AppModule } from '../../src/app.module';
-import { GlobalFixtures } from '../fixtures/global-fixtures';
 import { CreateProductDto } from '../../src/product/dto/create-product.dto';
 import { UpdateProductDto } from '../../src/product/dto/update-product.dto';
+import { GlobalFixtures } from './fixtures/global-fixtures';
 
 describe('ProductController (e2e)', () => {
   let app: INestApplication;
