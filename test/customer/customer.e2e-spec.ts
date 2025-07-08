@@ -2,13 +2,14 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import * as request from 'supertest';
 import { AppModule } from '../../src/app.module';
-import { GlobalFixtures } from '../fixtures/global-fixtures';
+import { CustomerFixtures, CustomerTestScenario } from '../fixtures/customer-fixtures';
 import { CreateCustomerDto } from '../../src/customer/dto/create-customer.dto';
 import { UpdateCustomerDto } from '../../src/customer/dto/update-customer.dto';
 
 describe('CustomerController (e2e)', () => {
   let app: INestApplication;
-  let fixtures: GlobalFixtures;
+  let fixtures: CustomerFixtures;
+  let testData: CustomerTestScenario;
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -26,13 +27,18 @@ describe('CustomerController (e2e)', () => {
     app.setGlobalPrefix('api');
     await app.init();
 
-    // Initialize fixtures
-    fixtures = new GlobalFixtures(app);
-    await fixtures.load();
+    // Initialize customer-specific fixtures
+    fixtures = new CustomerFixtures(app);
+  });
+
+  beforeEach(async () => {
+    // Clean up and create fresh test data for each test
+    await fixtures.cleanup();
+    testData = await fixtures.createTestScenario();
   });
 
   afterAll(async () => {
-    await fixtures.clear();
+    await fixtures.cleanup();
     await app.close();
   });
 
@@ -43,18 +49,18 @@ describe('CustomerController (e2e)', () => {
         .expect(200)
         .expect((res) => {
           expect(Array.isArray(res.body)).toBe(true);
-          expect(res.body.length).toBe(fixtures.getCustomers().length);
+          expect(res.body.length).toBe(testData.customers.length);
           
           // Check if all customers are returned
           const emails = res.body.map(customer => customer.email);
-          expect(emails).toContain('john@example.com');
-          expect(emails).toContain('jane@example.com');
-          expect(emails).toContain('bob@example.com');
+          expect(emails).toContain('customer-test1@example.com');
+          expect(emails).toContain('customer-test2@example.com');
+          expect(emails).toContain('customer-test3@example.com');
         });
     });
 
     it('GET /:id should return customer by id', () => {
-      const customer = fixtures.getCustomers()[0];
+      const customer = testData.customers[0];
       
       return request(app.getHttpServer())
         .get(`/api/customers/${customer.id}`)
@@ -106,7 +112,7 @@ describe('CustomerController (e2e)', () => {
     });
 
     it('PATCH /:id should update a customer', () => {
-      const customer = fixtures.getCustomers()[0];
+      const customer = testData.customers[0];
       const updateCustomerDto: UpdateCustomerDto = {
         name: 'Updated Name',
         phone: 'updated-phone',
@@ -126,7 +132,7 @@ describe('CustomerController (e2e)', () => {
     });
 
     it('DELETE /:id should soft delete a customer', () => {
-      const customer = fixtures.getCustomers()[1];
+      const customer = testData.customers[1];
       
       return request(app.getHttpServer())
         .delete(`/api/customers/${customer.id}`)

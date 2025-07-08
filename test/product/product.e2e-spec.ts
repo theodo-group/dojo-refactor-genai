@@ -2,13 +2,14 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import * as request from 'supertest';
 import { AppModule } from '../../src/app.module';
-import { GlobalFixtures } from '../fixtures/global-fixtures';
+import { ProductFixtures, ProductTestScenario } from '../fixtures/product-fixtures';
 import { CreateProductDto } from '../../src/product/dto/create-product.dto';
 import { UpdateProductDto } from '../../src/product/dto/update-product.dto';
 
 describe('ProductController (e2e)', () => {
   let app: INestApplication;
-  let fixtures: GlobalFixtures;
+  let fixtures: ProductFixtures;
+  let testData: ProductTestScenario;
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -26,13 +27,18 @@ describe('ProductController (e2e)', () => {
     app.setGlobalPrefix('api');
     await app.init();
 
-    // Initialize fixtures
-    fixtures = new GlobalFixtures(app);
-    await fixtures.load();
+    // Initialize product-specific fixtures
+    fixtures = new ProductFixtures(app);
+  });
+
+  beforeEach(async () => {
+    // Clean up and create fresh test data for each test
+    await fixtures.cleanup();
+    testData = await fixtures.createTestScenario();
   });
 
   afterAll(async () => {
-    await fixtures.clear();
+    await fixtures.cleanup();
     await app.close();
   });
 
@@ -43,12 +49,12 @@ describe('ProductController (e2e)', () => {
         .expect(200)
         .expect((res) => {
           expect(Array.isArray(res.body)).toBe(true);
-          expect(res.body.length).toBe(fixtures.getProducts().length);
+          expect(res.body.length).toBe(testData.products.length);
           
           // Check if products data is correct
           const productNames = res.body.map(product => product.name);
-          expect(productNames).toContain('Margherita Pizza');
-          expect(productNames).toContain('Caesar Salad');
+          expect(productNames).toContain('Product Test Pizza');
+          expect(productNames).toContain('Product Test Salad');
         });
     });
 
@@ -63,13 +69,12 @@ describe('ProductController (e2e)', () => {
           });
           
           const productNames = res.body.map(product => product.name);
-          expect(productNames).toContain('Margherita Pizza');
-          expect(productNames).toContain('Pepperoni Pizza');
+          expect(productNames).toContain('Product Test Pizza');
         });
     });
 
     it('GET /:id should return product by id', () => {
-      const product = fixtures.getProducts()[0];
+      const product = testData.products[0];
       
       return request(app.getHttpServer())
         .get(`/api/products/${product.id}`)
@@ -103,7 +108,7 @@ describe('ProductController (e2e)', () => {
     });
 
     it('PATCH /:id should update a product', () => {
-      const product = fixtures.getProducts()[0];
+      const product = testData.products[0];
       const updateProductDto: UpdateProductDto = {
         name: 'Updated Product Name',
         price: 19.99,
@@ -123,7 +128,7 @@ describe('ProductController (e2e)', () => {
     });
 
     it('DELETE /:id should soft delete a product', () => {
-      const product = fixtures.getProducts()[1];
+      const product = testData.products[1];
       
       return request(app.getHttpServer())
         .delete(`/api/products/${product.id}`)

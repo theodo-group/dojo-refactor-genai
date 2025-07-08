@@ -2,13 +2,14 @@ import { Test, TestingModule } from "@nestjs/testing";
 import { INestApplication, ValidationPipe } from "@nestjs/common";
 import * as request from "supertest";
 import { AppModule } from "../../src/app.module";
-import { GlobalFixtures } from "../fixtures/global-fixtures";
+import { OrderFixtures, OrderTestScenario } from "../fixtures/order-fixtures";
 import { CreateOrderDto } from "../../src/order/dto/create-order.dto";
 import { OrderStatus } from "../../src/entities/order.entity";
 
 describe("OrderController (e2e)", () => {
   let app: INestApplication;
-  let fixtures: GlobalFixtures;
+  let fixtures: OrderFixtures;
+  let testData: OrderTestScenario;
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -26,13 +27,18 @@ describe("OrderController (e2e)", () => {
     app.setGlobalPrefix("api");
     await app.init();
 
-    // Initialize fixtures
-    fixtures = new GlobalFixtures(app);
-    await fixtures.load();
+    // Initialize order-specific fixtures
+    fixtures = new OrderFixtures(app);
+  });
+
+  beforeEach(async () => {
+    // Clean up and create fresh test data for each test
+    await fixtures.cleanup();
+    testData = await fixtures.createTestScenario();
   });
 
   afterAll(async () => {
-    await fixtures.clear();
+    await fixtures.cleanup();
     await app.close();
   });
 
@@ -43,7 +49,7 @@ describe("OrderController (e2e)", () => {
         .expect(200)
         .expect((res) => {
           expect(Array.isArray(res.body)).toBe(true);
-          expect(res.body.length).toBe(fixtures.getOrders().length);
+          expect(res.body.length).toBe(testData.orders.length);
 
           // Check if each order has customer and products
           res.body.forEach((order) => {
@@ -67,7 +73,7 @@ describe("OrderController (e2e)", () => {
     });
 
     it("GET /:id should return order by id", () => {
-      const order = fixtures.getOrders()[0];
+      const order = testData.orders[0];
 
       return request(app.getHttpServer())
         .get(`/api/orders/${order.id}`)
@@ -81,7 +87,7 @@ describe("OrderController (e2e)", () => {
     });
 
     it("GET /customer/:customerId should return orders for a customer", () => {
-      const customer = fixtures.getCustomers()[0];
+      const customer = testData.customers[0];
 
       return request(app.getHttpServer())
         .get(`/api/orders/customer/${customer.id}`)
@@ -95,8 +101,8 @@ describe("OrderController (e2e)", () => {
     });
 
     it("POST / should create a new order", () => {
-      const customer = fixtures.getCustomers()[0];
-      const products = fixtures.getProducts().slice(0, 2);
+      const customer = testData.customers[0];
+      const products = testData.products.slice(0, 2);
 
       const createOrderDto: CreateOrderDto = {
         customerId: customer.id,
@@ -119,9 +125,7 @@ describe("OrderController (e2e)", () => {
     });
 
     it("PATCH /:id/status should update order status", () => {
-      const order = fixtures
-        .getOrders()
-        .find((o) => o.status === OrderStatus.READY);
+      const order = testData.orders.find((o) => o.status === OrderStatus.READY);
       const newStatus = OrderStatus.DELIVERED;
 
       return request(app.getHttpServer())
@@ -135,9 +139,7 @@ describe("OrderController (e2e)", () => {
     });
 
     it("PATCH /:id/status should prevent invalid status transitions", () => {
-      const order = fixtures
-        .getOrders()
-        .find((o) => o.status === OrderStatus.DELIVERED);
+      const order = testData.orders.find((o) => o.status === OrderStatus.DELIVERED);
       const newStatus = OrderStatus.PREPARING;
 
       return request(app.getHttpServer())
@@ -147,13 +149,11 @@ describe("OrderController (e2e)", () => {
     });
 
     it("DELETE /:id should cancel an order", () => {
-      const order = fixtures
-        .getOrders()
-        .find(
-          (o) =>
-            o.status === OrderStatus.PENDING ||
-            o.status === OrderStatus.PREPARING
-        );
+      const order = testData.orders.find(
+        (o) =>
+          o.status === OrderStatus.PENDING ||
+          o.status === OrderStatus.PREPARING
+      );
 
       return request(app.getHttpServer())
         .delete(`/api/orders/${order.id}`)
