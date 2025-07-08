@@ -173,7 +173,8 @@ describe("OrderController (e2e)", () => {
     });
 
     it("POST / should create a new order", () => {
-      const customer = testCustomers[0];
+      // Use testCustomers[1] (Jane Smith) who has no existing orders, so no loyalty discount applies
+      const customer = testCustomers[1];
       const products = testProducts.slice(0, 2);
 
       const createOrderDto: CreateOrderDto = {
