@@ -23,14 +23,18 @@ export class GlobalFixtures {
     this.orderRepository = app.get(getRepositoryToken(Order));
   }
 
-  async load(customers: Customer[], products: Product[]): Promise<void> {
+  async load(
+    customers: Customer[],
+    products: Product[],
+    orders: Order[] = []
+  ): Promise<void> {
     this.customers = customers;
 
     // Create products
     this.products = products;
 
     // Create orders
-    this.orders = await this.createOrders();
+    this.orders = orders;
   }
 
   async clear(): Promise<void> {
@@ -39,11 +43,6 @@ export class GlobalFixtures {
     await this.orderRepository.query("TRUNCATE TABLE orders CASCADE");
     await this.productRepository.query("TRUNCATE TABLE products CASCADE");
     await this.customerRepository.query("TRUNCATE TABLE customers CASCADE");
-
-    // Reset cached data
-    this.customers = [];
-    this.products = [];
-    this.orders = [];
   }
 
   // Helper methods to access fixture data
@@ -77,58 +76,11 @@ export class GlobalFixtures {
     return await this.productRepository.save(createdProducts);
   }
 
-  // Order creation
-  private async createOrders(): Promise<Order[]> {
-    // Create dates for the orders - to make first customer eligible for loyalty program
-    const now = new Date();
-    const tenDaysAgo = new Date(now);
-    tenDaysAgo.setDate(now.getDate() - 10);
+  async createOrders(orders: Partial<Order>[]): Promise<Order[]> {
+    const createdOrders = orders.map((order) =>
+      this.orderRepository.create(order)
+    );
 
-    const fifteenDaysAgo = new Date(now);
-    fifteenDaysAgo.setDate(now.getDate() - 15);
-
-    const twentyDaysAgo = new Date(now);
-    twentyDaysAgo.setDate(now.getDate() - 20);
-
-    const twentyFiveDaysAgo = new Date(now);
-    twentyFiveDaysAgo.setDate(now.getDate() - 25);
-
-    const orders = [
-      this.orderRepository.create({
-        customer: this.customers[0],
-        products: [this.products[0], this.products[3]],
-        totalAmount: 17.98,
-        status: OrderStatus.DELIVERED,
-        notes: "Extra cheese please",
-        createdAt: tenDaysAgo,
-        updatedAt: tenDaysAgo,
-      }),
-      this.orderRepository.create({
-        customer: this.customers[0],
-        products: [this.products[1], this.products[2], this.products[4]],
-        totalAmount: 31.97,
-        status: OrderStatus.PREPARING,
-        createdAt: fifteenDaysAgo,
-        updatedAt: fifteenDaysAgo,
-      }),
-      this.orderRepository.create({
-        customer: this.customers[0],
-        products: [this.products[0], this.products[2]],
-        totalAmount: 21.98,
-        status: OrderStatus.DELIVERED,
-        createdAt: twentyDaysAgo,
-        updatedAt: twentyDaysAgo,
-      }),
-      this.orderRepository.create({
-        customer: this.customers[0],
-        products: [this.products[4]],
-        totalAmount: 7.99,
-        status: OrderStatus.READY,
-        createdAt: twentyFiveDaysAgo,
-        updatedAt: twentyFiveDaysAgo,
-      }),
-    ];
-
-    return await this.orderRepository.save(orders);
+    return await this.orderRepository.save(createdOrders);
   }
 }

@@ -8,6 +8,20 @@ import { OrderStatus } from "../../src/entities/order.entity";
 import { customerMocks } from "../fixtures/mocks/customer.mocks";
 import { productMocks } from "../fixtures/mocks/product.mocks";
 
+// Create dates for the orders - to make first customer eligible for loyalty program
+const now = new Date();
+const tenDaysAgo = new Date(now);
+tenDaysAgo.setDate(now.getDate() - 10);
+
+const fifteenDaysAgo = new Date(now);
+fifteenDaysAgo.setDate(now.getDate() - 15);
+
+const twentyDaysAgo = new Date(now);
+twentyDaysAgo.setDate(now.getDate() - 20);
+
+const twentyFiveDaysAgo = new Date(now);
+twentyFiveDaysAgo.setDate(now.getDate() - 25);
+
 describe("OrderController (e2e)", () => {
   let app: INestApplication;
   let fixtures: GlobalFixtures;
@@ -32,7 +46,43 @@ describe("OrderController (e2e)", () => {
     fixtures = new GlobalFixtures(app);
     const customers = await fixtures.createCustomers(customerMocks);
     const products = await fixtures.createProducts(productMocks);
-    await fixtures.load(customers, products);
+    const orderMocks = [
+      {
+        customer: customers[0],
+        products: [products[0], products[3]],
+        totalAmount: 17.98,
+        status: OrderStatus.DELIVERED,
+        notes: "Extra cheese please",
+        createdAt: tenDaysAgo,
+        updatedAt: tenDaysAgo,
+      },
+      {
+        customer: customers[0],
+        products: [products[1], products[2], products[4]],
+        totalAmount: 31.97,
+        status: OrderStatus.PREPARING,
+        createdAt: fifteenDaysAgo,
+        updatedAt: fifteenDaysAgo,
+      },
+      {
+        customer: customers[0],
+        products: [products[0], products[2]],
+        totalAmount: 21.98,
+        status: OrderStatus.DELIVERED,
+        createdAt: twentyDaysAgo,
+        updatedAt: twentyDaysAgo,
+      },
+      {
+        customer: customers[0],
+        products: [products[4]],
+        totalAmount: 7.99,
+        status: OrderStatus.READY,
+        createdAt: twentyFiveDaysAgo,
+        updatedAt: twentyFiveDaysAgo,
+      },
+    ];
+    const orders = await fixtures.createOrders(orderMocks);
+    await fixtures.load(customers, products, orders);
   });
 
   afterAll(async () => {
