@@ -5,7 +5,7 @@ import { Order, OrderStatus } from '../../../src/entities/order.entity';
 import { Product } from '../../../src/entities/product.entity';
 import { Repository } from 'typeorm';
 
-export class GlobalFixtures {
+export class OrderFixtures {
   private app: INestApplication;
   private customerRepository: Repository<Customer>;
   private productRepository: Repository<Product>;
