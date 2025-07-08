@@ -2,13 +2,13 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import * as request from 'supertest';
 import { AppModule } from '../../src/app.module';
-import { GlobalFixtures } from '../fixtures/global-fixtures';
+import { CustomerFixture } from '../fixtures/customer.fixture';
 import { CreateCustomerDto } from '../../src/customer/dto/create-customer.dto';
 import { UpdateCustomerDto } from '../../src/customer/dto/update-customer.dto';
 
 describe('CustomerController (e2e)', () => {
   let app: INestApplication;
-  let fixtures: GlobalFixtures;
+  let customerFixture: CustomerFixture;
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -26,13 +26,13 @@ describe('CustomerController (e2e)', () => {
     app.setGlobalPrefix('api');
     await app.init();
 
-    // Initialize fixtures
-    fixtures = new GlobalFixtures(app);
-    await fixtures.load();
+    // Initialize customer fixture only
+    customerFixture = new CustomerFixture(app);
+    await customerFixture.load();
   });
 
   afterAll(async () => {
-    await fixtures.clear();
+    await customerFixture.clear();
     await app.close();
   });
 
@@ -43,7 +43,7 @@ describe('CustomerController (e2e)', () => {
         .expect(200)
         .expect((res) => {
           expect(Array.isArray(res.body)).toBe(true);
-          expect(res.body.length).toBe(fixtures.getCustomers().length);
+          expect(res.body.length).toBe(customerFixture.getCustomers().length);
           
           // Check if all customers are returned
           const emails = res.body.map(customer => customer.email);
@@ -54,7 +54,7 @@ describe('CustomerController (e2e)', () => {
     });
 
     it('GET /:id should return customer by id', () => {
-      const customer = fixtures.getCustomers()[0];
+      const customer = customerFixture.getCustomers()[0];
       
       return request(app.getHttpServer())
         .get(`/api/customers/${customer.id}`)
@@ -106,7 +106,7 @@ describe('CustomerController (e2e)', () => {
     });
 
     it('PATCH /:id should update a customer', () => {
-      const customer = fixtures.getCustomers()[0];
+      const customer = customerFixture.getCustomers()[0];
       const updateCustomerDto: UpdateCustomerDto = {
         name: 'Updated Name',
         phone: 'updated-phone',
@@ -126,7 +126,7 @@ describe('CustomerController (e2e)', () => {
     });
 
     it('DELETE /:id should soft delete a customer', () => {
-      const customer = fixtures.getCustomers()[1];
+      const customer = customerFixture.getCustomers()[1];
       
       return request(app.getHttpServer())
         .delete(`/api/customers/${customer.id}`)

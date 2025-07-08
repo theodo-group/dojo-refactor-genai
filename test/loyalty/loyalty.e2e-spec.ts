@@ -1,14 +1,18 @@
 import { Test, TestingModule } from "@nestjs/testing";
 import { INestApplication, ValidationPipe } from "@nestjs/common";
 import { AppModule } from "../../src/app.module";
-import { GlobalFixtures } from "../fixtures/global-fixtures";
+import { CustomerFixture } from "../fixtures/customer.fixture";
+import { ProductFixture } from "../fixtures/product.fixture";
+import { OrderFixture } from "../fixtures/order.fixture";
 import { LoyaltyService } from "../../src/loyalty/loyalty.service";
 import { OrderService } from "../../src/order/order.service";
 import { CreateOrderDto } from "../../src/order/dto/create-order.dto";
 
 describe("LoyaltyService (e2e)", () => {
   let app: INestApplication;
-  let fixtures: GlobalFixtures;
+  let customerFixture: CustomerFixture;
+  let productFixture: ProductFixture;
+  let orderFixture: OrderFixture;
   let loyaltyService: LoyaltyService;
   let orderService: OrderService;
 
@@ -28,23 +32,32 @@ describe("LoyaltyService (e2e)", () => {
     app.setGlobalPrefix("api");
     await app.init();
 
-    fixtures = new GlobalFixtures(app);
-    await fixtures.load();
+    // Initialize fixtures in dependency order
+    customerFixture = new CustomerFixture(app);
+    productFixture = new ProductFixture(app);
+    
+    await customerFixture.load();
+    await productFixture.load();
+    
+    orderFixture = new OrderFixture(app, customerFixture, productFixture);
+    await orderFixture.load();
 
     loyaltyService = app.get(LoyaltyService);
     orderService = app.get(OrderService);
   });
 
   afterAll(async () => {
-    await fixtures.clear();
+    await orderFixture.clear();
+    await productFixture.clear();
+    await customerFixture.clear();
     await app.close();
   });
 
   describe("Loyalty discounts", () => {
     it("should apply 10% discount for customers with more than 3 orders", async () => {
-      // Get a customer from fixtures
-      const customer = fixtures.getCustomers()[0];
-      const products = fixtures.getProducts().slice(0, 2);
+      // Get a customer from fixtures - first customer already has 4 orders from OrderFixture
+      const customer = customerFixture.getCustomers()[0];
+      const products = productFixture.getProducts().slice(0, 2);
       const originalTotal = 25.99;
 
       // Create an order using the orderService directly
@@ -62,12 +75,8 @@ describe("LoyaltyService (e2e)", () => {
       const expectedTotal = parseFloat((originalTotal * 0.9).toFixed(2));
       expect(order.totalAmount).toBe(expectedTotal);
 
-      // This will cause issues in other tests since the shared fixtures
-      // expect specific order totals that are now changed
-
-      // Modify a fixture order total to cause problems in other tests
-      const fixtureOrder = fixtures.getOrders()[0];
-      fixtureOrder.totalAmount = 5.99; // This will break other tests
+      // No more fixture pollution - each test has its own isolated data
+      // The OrderFixture data is separate from this test's order creation
     });
   });
 });

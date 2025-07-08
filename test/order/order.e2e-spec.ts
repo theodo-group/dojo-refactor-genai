@@ -2,13 +2,14 @@ import { Test, TestingModule } from "@nestjs/testing";
 import { INestApplication, ValidationPipe } from "@nestjs/common";
 import * as request from "supertest";
 import { AppModule } from "../../src/app.module";
-import { GlobalFixtures } from "../fixtures/global-fixtures";
+import { CustomerFixture } from "../fixtures/customer.fixture";
+import { ProductFixture } from "../fixtures/product.fixture";
+import { OrderFixture } from "../fixtures/order.fixture";
 import { CreateOrderDto } from "../../src/order/dto/create-order.dto";
 import { OrderStatus } from "../../src/entities/order.entity";
 
 describe("OrderController (e2e)", () => {
   let app: INestApplication;
-  let fixtures: GlobalFixtures;
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -25,25 +26,42 @@ describe("OrderController (e2e)", () => {
     );
     app.setGlobalPrefix("api");
     await app.init();
-
-    // Initialize fixtures
-    fixtures = new GlobalFixtures(app);
-    await fixtures.load();
   });
 
   afterAll(async () => {
-    await fixtures.clear();
     await app.close();
   });
 
-  describe("/api/orders", () => {
+  // Tests that need existing orders
+  describe("/api/orders - with existing orders", () => {
+    let customerFixture: CustomerFixture;
+    let productFixture: ProductFixture;
+    let orderFixture: OrderFixture;
+
+    beforeAll(async () => {
+      customerFixture = new CustomerFixture(app);
+      productFixture = new ProductFixture(app);
+      
+      await customerFixture.load();
+      await productFixture.load();
+      
+      orderFixture = new OrderFixture(app, customerFixture, productFixture);
+      await orderFixture.load();
+    });
+
+    afterAll(async () => {
+      await orderFixture.clear();
+      await productFixture.clear();
+      await customerFixture.clear();
+    });
+
     it("GET / should return all orders", () => {
       return request(app.getHttpServer())
         .get("/api/orders")
         .expect(200)
         .expect((res) => {
           expect(Array.isArray(res.body)).toBe(true);
-          expect(res.body.length).toBe(fixtures.getOrders().length);
+          expect(res.body.length).toBe(orderFixture.getOrders().length);
 
           // Check if each order has customer and products
           res.body.forEach((order) => {
@@ -67,7 +85,7 @@ describe("OrderController (e2e)", () => {
     });
 
     it("GET /:id should return order by id", () => {
-      const order = fixtures.getOrders()[0];
+      const order = orderFixture.getOrders()[0];
 
       return request(app.getHttpServer())
         .get(`/api/orders/${order.id}`)
@@ -81,7 +99,7 @@ describe("OrderController (e2e)", () => {
     });
 
     it("GET /customer/:customerId should return orders for a customer", () => {
-      const customer = fixtures.getCustomers()[0];
+      const customer = customerFixture.getCustomers()[0];
 
       return request(app.getHttpServer())
         .get(`/api/orders/customer/${customer.id}`)
@@ -94,32 +112,8 @@ describe("OrderController (e2e)", () => {
         });
     });
 
-    it("POST / should create a new order", () => {
-      const customer = fixtures.getCustomers()[0];
-      const products = fixtures.getProducts().slice(0, 2);
-
-      const createOrderDto: CreateOrderDto = {
-        customerId: customer.id,
-        productIds: products.map((p) => p.id),
-        totalAmount: 30.5,
-        notes: "Test order notes",
-      };
-
-      return request(app.getHttpServer())
-        .post("/api/orders")
-        .send(createOrderDto)
-        .expect(201)
-        .expect((res) => {
-          expect(res.body.status).toBe(OrderStatus.PENDING);
-          expect(res.body.totalAmount).toBe(createOrderDto.totalAmount);
-          expect(res.body.notes).toBe(createOrderDto.notes);
-          expect(res.body.customer.id).toBe(customer.id);
-          expect(res.body.products.length).toBe(products.length);
-        });
-    });
-
     it("PATCH /:id/status should update order status", () => {
-      const order = fixtures
+      const order = orderFixture
         .getOrders()
         .find((o) => o.status === OrderStatus.READY);
       const newStatus = OrderStatus.DELIVERED;
@@ -135,7 +129,7 @@ describe("OrderController (e2e)", () => {
     });
 
     it("PATCH /:id/status should prevent invalid status transitions", () => {
-      const order = fixtures
+      const order = orderFixture
         .getOrders()
         .find((o) => o.status === OrderStatus.DELIVERED);
       const newStatus = OrderStatus.PREPARING;
@@ -147,7 +141,7 @@ describe("OrderController (e2e)", () => {
     });
 
     it("DELETE /:id should cancel an order", () => {
-      const order = fixtures
+      const order = orderFixture
         .getOrders()
         .find(
           (o) =>
@@ -166,6 +160,49 @@ describe("OrderController (e2e)", () => {
             .expect((res) => {
               expect(res.body.status).toBe(OrderStatus.CANCELLED);
             });
+        });
+    });
+  });
+
+  // Tests that only need customers and products
+  describe("/api/orders - order creation", () => {
+    let customerFixture: CustomerFixture;
+    let productFixture: ProductFixture;
+
+    beforeAll(async () => {
+      customerFixture = new CustomerFixture(app);
+      productFixture = new ProductFixture(app);
+      
+      await customerFixture.load();
+      await productFixture.load();
+    });
+
+    afterAll(async () => {
+      await productFixture.clear();
+      await customerFixture.clear();
+    });
+
+    it("POST / should create a new order", () => {
+      const customer = customerFixture.getCustomers()[0];
+      const products = productFixture.getProducts().slice(0, 2);
+
+      const createOrderDto: CreateOrderDto = {
+        customerId: customer.id,
+        productIds: products.map((p) => p.id),
+        totalAmount: 30.5,
+        notes: "Test order notes",
+      };
+
+      return request(app.getHttpServer())
+        .post("/api/orders")
+        .send(createOrderDto)
+        .expect(201)
+        .expect((res) => {
+          expect(res.body.status).toBe(OrderStatus.PENDING);
+          expect(res.body.totalAmount).toBe(createOrderDto.totalAmount);
+          expect(res.body.notes).toBe(createOrderDto.notes);
+          expect(res.body.customer.id).toBe(customer.id);
+          expect(res.body.products.length).toBe(products.length);
         });
     });
   });
