@@ -61,13 +61,28 @@ describe("LoyaltyService (e2e)", () => {
       // Verify the discount was applied (should be 10% less)
       const expectedTotal = parseFloat((originalTotal * 0.9).toFixed(2));
       expect(order.totalAmount).toBe(expectedTotal);
-
-      // This will cause issues in other tests since the shared fixtures
-      // expect specific order totals that are now changed
-
-      // Modify a fixture order total to cause problems in other tests
-      const fixtureOrder = fixtures.getOrders()[0];
-      fixtureOrder.totalAmount = 5.99; // This will break other tests
     });
+
+    it("should not apply any discount for customers with 3 orders or less", async () => {
+      // Get a customer from fixtures
+      const customer = fixtures.getCustomers()[1];
+      const products = fixtures.getProducts().slice(0, 2);
+      const originalTotal = 28.99;
+
+      // Create an order using the orderService directly
+      const createOrderDto: CreateOrderDto = {
+        customerId: customer.id,
+        productIds: products.map((p) => p.id),
+        totalAmount: originalTotal,
+        notes: "Test loyalty discount",
+      };
+
+      // Create the order - loyalty discount should be applied
+      const order = await orderService.create(createOrderDto);
+
+      // Verify no discount was applied
+      expect(order.totalAmount).toBe(originalTotal);
+    });
+
   });
 });

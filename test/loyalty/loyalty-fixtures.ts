@@ -73,6 +73,11 @@ export class LoyaltyFixtures {
         email: 'john@example.com',
         phone: '123-456-7890',
         address: '123 Main St',
+      }),      this.customerRepository.create({
+        name: 'John Doe',
+        email: 'john@example.com',
+        phone: '123-456-7890',
+        address: '123 Main St',
       }),
     ];
 
@@ -161,6 +166,33 @@ export class LoyaltyFixtures {
         createdAt: twentyDaysAgo,
         updatedAt: twentyDaysAgo
       }),
+      // Customer 2's orders
+      this.orderRepository.create({
+        customer: this.customers[1],
+        products: [this.products[0], this.products[3]],
+        totalAmount: 17.98,
+        status: OrderStatus.DELIVERED,
+        notes: 'Extra cheese please',
+        createdAt: tenDaysAgo,
+        updatedAt: tenDaysAgo
+      }),
+      this.orderRepository.create({
+        customer: this.customers[1],
+        products: [this.products[1], this.products[2], this.products[4]],
+        totalAmount: 31.97,
+        status: OrderStatus.PREPARING,
+        createdAt: fifteenDaysAgo,
+        updatedAt: fifteenDaysAgo
+      }),
+      this.orderRepository.create({
+        customer: this.customers[1],
+        products: [this.products[0], this.products[2]],
+        totalAmount: 21.98,
+        status: OrderStatus.DELIVERED,
+        createdAt: twentyDaysAgo,
+        updatedAt: twentyDaysAgo
+      }),
+
     ];
 
     return await this.orderRepository.save(orders);
