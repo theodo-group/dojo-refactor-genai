@@ -2,41 +2,43 @@ import { Test, TestingModule } from "@nestjs/testing";
 import { INestApplication, ValidationPipe } from "@nestjs/common";
 import * as request from "supertest";
 import { AppModule } from "../../src/app.module";
-import { GlobalFixtures } from "../fixtures/global-fixtures";
 import { CreateOrderDto } from "../../src/order/dto/create-order.dto";
 import { OrderStatus } from "../../src/entities/order.entity";
+import { OrderFixtures } from "../fixtures/orders";
+import { ProductFixtures } from "../fixtures/products";
+import { CustomerFixtures } from "../fixtures/customers";
 
 describe("OrderController (e2e)", () => {
-  let app: INestApplication;
-  let fixtures: GlobalFixtures;
-
-  beforeAll(async () => {
-    const moduleFixture: TestingModule = await Test.createTestingModule({
-      imports: [AppModule],
-    }).compile();
-
-    app = moduleFixture.createNestApplication();
-    app.useGlobalPipes(
-      new ValidationPipe({
-        whitelist: true,
-        transform: true,
-        forbidNonWhitelisted: true,
-      })
-    );
-    app.setGlobalPrefix("api");
-    await app.init();
-
-    // Initialize fixtures
-    fixtures = new GlobalFixtures(app);
-    await fixtures.load();
-  });
-
-  afterAll(async () => {
-    await fixtures.clear();
-    await app.close();
-  });
-
   describe("/api/orders", () => {
+    let app: INestApplication;
+    let fixtures: OrderFixtures;
+
+    beforeAll(async () => {
+      const moduleFixture: TestingModule = await Test.createTestingModule({
+        imports: [AppModule],
+      }).compile();
+
+      app = moduleFixture.createNestApplication();
+      app.useGlobalPipes(
+        new ValidationPipe({
+          whitelist: true,
+          transform: true,
+          forbidNonWhitelisted: true,
+        }),
+      );
+
+      app.setGlobalPrefix("api");
+      await app.init();
+
+      // Initialize fixtures
+      fixtures = new OrderFixtures(app);
+      await fixtures.load();
+    });
+
+    afterAll(async () => {
+      await fixtures.clear();
+      await app.close();
+    });
     it("GET / should return all orders", () => {
       return request(app.getHttpServer())
         .get("/api/orders")
@@ -94,30 +96,6 @@ describe("OrderController (e2e)", () => {
         });
     });
 
-    it("POST / should create a new order", () => {
-      const customer = fixtures.getCustomers()[0];
-      const products = fixtures.getProducts().slice(0, 2);
-
-      const createOrderDto: CreateOrderDto = {
-        customerId: customer.id,
-        productIds: products.map((p) => p.id),
-        totalAmount: 30.5,
-        notes: "Test order notes",
-      };
-
-      return request(app.getHttpServer())
-        .post("/api/orders")
-        .send(createOrderDto)
-        .expect(201)
-        .expect((res) => {
-          expect(res.body.status).toBe(OrderStatus.PENDING);
-          expect(res.body.totalAmount).toBe(createOrderDto.totalAmount);
-          expect(res.body.notes).toBe(createOrderDto.notes);
-          expect(res.body.customer.id).toBe(customer.id);
-          expect(res.body.products.length).toBe(products.length);
-        });
-    });
-
     it("PATCH /:id/status should update order status", () => {
       const order = fixtures
         .getOrders()
@@ -152,7 +130,7 @@ describe("OrderController (e2e)", () => {
         .find(
           (o) =>
             o.status === OrderStatus.PENDING ||
-            o.status === OrderStatus.PREPARING
+            o.status === OrderStatus.PREPARING,
         );
 
       return request(app.getHttpServer())
@@ -166,6 +144,66 @@ describe("OrderController (e2e)", () => {
             .expect((res) => {
               expect(res.body.status).toBe(OrderStatus.CANCELLED);
             });
+        });
+    });
+  });
+
+  describe("OrderController - order creation (e2e)", () => {
+    let app: INestApplication;
+    let productFixtures: ProductFixtures;
+    let customerFixtures: CustomerFixtures;
+
+    beforeAll(async () => {
+      const moduleFixture: TestingModule = await Test.createTestingModule({
+        imports: [AppModule],
+      }).compile();
+
+      app = moduleFixture.createNestApplication();
+      app.useGlobalPipes(
+        new ValidationPipe({
+          whitelist: true,
+          transform: true,
+          forbidNonWhitelisted: true,
+        }),
+      );
+
+      app.setGlobalPrefix("api");
+      await app.init();
+
+      // Initialize fixtures
+      productFixtures = new ProductFixtures(app);
+      customerFixtures = new CustomerFixtures(app);
+      await productFixtures.load();
+      await customerFixtures.load();
+    });
+
+    afterAll(async () => {
+      await productFixtures.clear();
+      await customerFixtures.clear();
+      await app.close();
+    });
+
+    it("POST / should create a new order", () => {
+      const customer = customerFixtures.getCustomers()[0];
+      const products = productFixtures.getProducts().slice(0, 2);
+
+      const createOrderDto: CreateOrderDto = {
+        customerId: customer.id,
+        productIds: products.map((p) => p.id),
+        totalAmount: 30.5,
+        notes: "Test order notes",
+      };
+
+      return request(app.getHttpServer())
+        .post("/api/orders")
+        .send(createOrderDto)
+        .expect(201)
+        .expect((res) => {
+          expect(res.body.status).toBe(OrderStatus.PENDING);
+          expect(res.body.totalAmount).toBe(30.5);
+          expect(res.body.notes).toBe(createOrderDto.notes);
+          expect(res.body.customer.id).toBe(customer.id);
+          expect(res.body.products.length).toBe(products.length);
         });
     });
   });

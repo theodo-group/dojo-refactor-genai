@@ -5,10 +5,11 @@ import { GlobalFixtures } from "../fixtures/global-fixtures";
 import { LoyaltyService } from "../../src/loyalty/loyalty.service";
 import { OrderService } from "../../src/order/order.service";
 import { CreateOrderDto } from "../../src/order/dto/create-order.dto";
+import { OrderFixtures } from "../fixtures/orders";
 
 describe("LoyaltyService (e2e)", () => {
   let app: INestApplication;
-  let fixtures: GlobalFixtures;
+  let orderFixtures: OrderFixtures;
   let loyaltyService: LoyaltyService;
   let orderService: OrderService;
 
@@ -23,28 +24,28 @@ describe("LoyaltyService (e2e)", () => {
         whitelist: true,
         transform: true,
         forbidNonWhitelisted: true,
-      })
+      }),
     );
     app.setGlobalPrefix("api");
     await app.init();
 
-    fixtures = new GlobalFixtures(app);
-    await fixtures.load();
+    orderFixtures = new OrderFixtures(app);
+    await orderFixtures.load();
 
     loyaltyService = app.get(LoyaltyService);
     orderService = app.get(OrderService);
   });
 
   afterAll(async () => {
-    await fixtures.clear();
+    await orderFixtures.clear();
     await app.close();
   });
 
   describe("Loyalty discounts", () => {
     it("should apply 10% discount for customers with more than 3 orders", async () => {
       // Get a customer from fixtures
-      const customer = fixtures.getCustomers()[0];
-      const products = fixtures.getProducts().slice(0, 2);
+      const customer = orderFixtures.getCustomers()[0];
+      const products = orderFixtures.getProducts().slice(0, 2);
       const originalTotal = 25.99;
 
       // Create an order using the orderService directly
@@ -66,7 +67,7 @@ describe("LoyaltyService (e2e)", () => {
       // expect specific order totals that are now changed
 
       // Modify a fixture order total to cause problems in other tests
-      const fixtureOrder = fixtures.getOrders()[0];
+      const fixtureOrder = orderFixtures.getOrders()[0];
       fixtureOrder.totalAmount = 5.99; // This will break other tests
     });
   });
