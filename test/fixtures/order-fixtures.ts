@@ -3,20 +3,24 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Customer } from '../../src/entities/customer.entity';
 import { Product } from '../../src/entities/product.entity';
+import { Order, OrderStatus } from '../../src/entities/order.entity';
 
-export class GlobalFixtures {
+export class OrderFixtures {
   private app: INestApplication;
   private customerRepository: Repository<Customer>;
   private productRepository: Repository<Product>;
+  private orderRepository: Repository<Order>;
 
   // Cached fixtures for reuse across tests
   private customers: Customer[] = [];
   private products: Product[] = [];
+  private orders: Order[] = [];
 
   constructor(app: INestApplication) {
     this.app = app;
     this.customerRepository = app.get(getRepositoryToken(Customer));
     this.productRepository = app.get(getRepositoryToken(Product));
+    this.orderRepository = app.get(getRepositoryToken(Order));
   }
 
   async load(): Promise<void> {
@@ -28,16 +32,22 @@ export class GlobalFixtures {
     
     // Create products
     this.products = await this.createProducts();
+    
+    // Create orders
+    this.orders = await this.createOrders();
   }
 
   async clear(): Promise<void> {
     // Delete in the correct order to respect foreign key constraints
+    await this.orderRepository.query('TRUNCATE TABLE order_products CASCADE');
+    await this.orderRepository.query('TRUNCATE TABLE orders CASCADE');
     await this.productRepository.query('TRUNCATE TABLE products CASCADE');
     await this.customerRepository.query('TRUNCATE TABLE customers CASCADE');
     
     // Reset cached data
     this.customers = [];
     this.products = [];
+    this.orders = [];
   }
 
   // Helper methods to access fixture data
@@ -47,6 +57,10 @@ export class GlobalFixtures {
 
   getProducts(): Product[] {
     return this.products;
+  }
+
+  getOrders(): Order[] {
+    return this.orders;
   }
 
   // Customer creation
@@ -111,5 +125,38 @@ export class GlobalFixtures {
     ];
     
     return await this.productRepository.save(products);
+  }
+
+  // Order creation
+  private async createOrders(): Promise<Order[]> {
+    const orders = [
+      this.orderRepository.create({
+        customer: this.customers[0],
+        products: [this.products[0], this.products[3]],
+        totalAmount: 17.98,
+        status: OrderStatus.DELIVERED,
+        notes: 'Extra cheese please',
+      }),
+      this.orderRepository.create({
+        customer: this.customers[1],
+        products: [this.products[1], this.products[2], this.products[4]],
+        totalAmount: 31.97,
+        status: OrderStatus.PREPARING,
+      }),
+      this.orderRepository.create({
+        customer: this.customers[2],
+        products: [this.products[0], this.products[2]],
+        totalAmount: 21.98,
+        status: OrderStatus.PENDING,
+      }),
+      this.orderRepository.create({
+        customer: this.customers[0],
+        products: [this.products[4]],
+        totalAmount: 7.99,
+        status: OrderStatus.READY,
+      }),
+    ];
+    
+    return await this.orderRepository.save(orders);
   }
 }
