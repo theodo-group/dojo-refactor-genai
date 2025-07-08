@@ -1,14 +1,14 @@
-import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { Test, TestingModule } from '@nestjs/testing';
 import * as request from 'supertest';
 import { AppModule } from '../../src/app.module';
-import { GlobalFixtures } from '../fixtures/global-fixtures';
 import { CreateProductDto } from '../../src/product/dto/create-product.dto';
 import { UpdateProductDto } from '../../src/product/dto/update-product.dto';
+import { ProductFixtures } from '../fixtures/product-fixtures';
 
 describe('ProductController (e2e)', () => {
   let app: INestApplication;
-  let fixtures: GlobalFixtures;
+  let fixtures: ProductFixtures;
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -27,7 +27,7 @@ describe('ProductController (e2e)', () => {
     await app.init();
 
     // Initialize fixtures
-    fixtures = new GlobalFixtures(app);
+    fixtures = new ProductFixtures(app);
     await fixtures.load();
   });
 

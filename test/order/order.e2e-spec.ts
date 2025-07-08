@@ -4,11 +4,15 @@ import * as request from "supertest";
 import { AppModule } from "../../src/app.module";
 import { OrderStatus } from "../../src/entities/order.entity";
 import { CreateOrderDto } from "../../src/order/dto/create-order.dto";
-import { GlobalFixtures } from "../fixtures/global-fixtures";
+import { CustomerFixtures } from "../fixtures/customer-fixtures";
+import { OrderFixtures } from "../fixtures/order-fixtures";
+import { ProductFixtures } from "../fixtures/product-fixtures";
 
 describe("OrderController (e2e)", () => {
   let app: INestApplication;
-  let fixtures: GlobalFixtures;
+  let orderFixtures: OrderFixtures;
+  let customerFixtures: CustomerFixtures;
+  let productFixtures: ProductFixtures;
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -27,12 +31,16 @@ describe("OrderController (e2e)", () => {
     await app.init();
 
     // Initialize fixtures
-    fixtures = new GlobalFixtures(app);
-    await fixtures.load();
+    orderFixtures = new OrderFixtures(app);
+    await orderFixtures.load();
+    customerFixtures = new CustomerFixtures(app);
+    await customerFixtures.load();
+    productFixtures = new ProductFixtures(app);
+    await productFixtures.load();
   });
 
   afterAll(async () => {
-    await fixtures.clear();
+    await orderFixtures.clear();
     await app.close();
   });
 
@@ -43,7 +51,7 @@ describe("OrderController (e2e)", () => {
         .expect(200)
         .expect((res) => {
           expect(Array.isArray(res.body)).toBe(true);
-          expect(res.body.length).toBe(fixtures.getOrders().length);
+          expect(res.body.length).toBe(orderFixtures.getOrders().length);
 
           // Check if each order has customer and products
           res.body.forEach((order) => {
@@ -67,7 +75,7 @@ describe("OrderController (e2e)", () => {
     });
 
     it("GET /:id should return order by id", () => {
-      const order = fixtures.getOrders()[0];
+      const order = orderFixtures.getOrders()[0];
 
       return request(app.getHttpServer())
         .get(`/api/orders/${order.id}`)
@@ -81,7 +89,7 @@ describe("OrderController (e2e)", () => {
     });
 
     it("GET /customer/:customerId should return orders for a customer", () => {
-      const customer = fixtures.getCustomers()[0];
+      const customer = customerFixtures.getCustomers()[0];
 
       return request(app.getHttpServer())
         .get(`/api/orders/customer/${customer.id}`)
@@ -95,8 +103,8 @@ describe("OrderController (e2e)", () => {
     });
 
     it("POST / should create a new order", () => {
-      const customer = fixtures.getCustomers()[0];
-      const products = fixtures.getProducts().slice(0, 2);
+      const customer = customerFixtures.getCustomers()[0];
+      const products = productFixtures.getProducts().slice(0, 2);
       console.log({ products })
 
       const createOrderDto: CreateOrderDto = {
@@ -118,7 +126,7 @@ describe("OrderController (e2e)", () => {
     });
 
     it("PATCH /:id/status should update order status", () => {
-      const order = fixtures
+      const order = orderFixtures
         .getOrders()
         .find((o) => o.status === OrderStatus.READY);
       const newStatus = OrderStatus.DELIVERED;
@@ -134,7 +142,7 @@ describe("OrderController (e2e)", () => {
     });
 
     it("PATCH /:id/status should prevent invalid status transitions", () => {
-      const order = fixtures
+      const order = orderFixtures
         .getOrders()
         .find((o) => o.status === OrderStatus.DELIVERED);
       const newStatus = OrderStatus.PREPARING;
@@ -146,7 +154,7 @@ describe("OrderController (e2e)", () => {
     });
 
     it("DELETE /:id should cancel an order", () => {
-      const order = fixtures
+      const order = orderFixtures
         .getOrders()
         .find(
           (o) =>
