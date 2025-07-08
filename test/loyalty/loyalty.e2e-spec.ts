@@ -1,14 +1,14 @@
 import { Test, TestingModule } from "@nestjs/testing";
 import { INestApplication, ValidationPipe } from "@nestjs/common";
 import { AppModule } from "../../src/app.module";
-import { GlobalFixtures } from "../fixtures/global-fixtures";
+import { LoyaltyFixtures } from "./loyalty-fixtures";
 import { LoyaltyService } from "../../src/loyalty/loyalty.service";
 import { OrderService } from "../../src/order/order.service";
 import { CreateOrderDto } from "../../src/order/dto/create-order.dto";
 
 describe("LoyaltyService (e2e)", () => {
   let app: INestApplication;
-  let fixtures: GlobalFixtures;
+  let fixtures: LoyaltyFixtures;
   let loyaltyService: LoyaltyService;
   let orderService: OrderService;
 
@@ -28,7 +28,7 @@ describe("LoyaltyService (e2e)", () => {
     app.setGlobalPrefix("api");
     await app.init();
 
-    fixtures = new GlobalFixtures(app);
+    fixtures = new LoyaltyFixtures(app);
     await fixtures.load();
 
     loyaltyService = app.get(LoyaltyService);
@@ -68,6 +68,27 @@ describe("LoyaltyService (e2e)", () => {
       // Modify a fixture order total to cause problems in other tests
       const fixtureOrder = fixtures.getOrders()[0];
       fixtureOrder.totalAmount = 5.99; // This will break other tests
+    });
+
+    it("should not apply discount for customers with 3 or less orders", async () => {
+      // Get a customer from fixtures
+      const customer = fixtures.getCustomers()[1];
+      const products = fixtures.getProducts().slice(0, 2);
+      const originalTotal = 25.99;
+
+      // Create an order using the orderService directly
+      const createOrderDto: CreateOrderDto = {
+        customerId: customer.id,
+        productIds: products.map((p) => p.id),
+        totalAmount: originalTotal,
+        notes: "Test no loyalty discount",
+      };
+
+      // Create the order - loyalty discount should not be applied
+      const order = await orderService.create(createOrderDto);
+
+      // Verify the discount was not applied
+      expect(order.totalAmount).toBe(originalTotal);
     });
   });
 });
