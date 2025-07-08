@@ -1,66 +1,53 @@
-import { Test, TestingModule } from "@nestjs/testing";
-import { INestApplication, ValidationPipe } from "@nestjs/common";
 import * as request from "supertest";
-import { AppModule } from "../../src/app.module";
-import { GlobalFixtures } from "../fixtures/global-fixtures";
+import { TestContext, createTestContext } from "../utils/test-context";
 import { CreateCustomerDto } from "../../src/customer/dto/create-customer.dto";
 import { UpdateCustomerDto } from "../../src/customer/dto/update-customer.dto";
+import { Customer } from "../../src/entities/customer.entity";
 
 describe("CustomerController (e2e)", () => {
-  let app: INestApplication;
-  let fixtures: GlobalFixtures;
+  let testContext: TestContext;
 
   beforeAll(async () => {
-    const moduleFixture: TestingModule = await Test.createTestingModule({
-      imports: [AppModule],
-    }).compile();
+    testContext = await createTestContext();
+  });
 
-    app = moduleFixture.createNestApplication();
-    app.useGlobalPipes(
-      new ValidationPipe({
-        whitelist: true,
-        transform: true,
-        forbidNonWhitelisted: true,
-      })
-    );
-    app.setGlobalPrefix("api");
-    await app.init();
-
-    // Initialize fixtures
-    fixtures = new GlobalFixtures(app);
-    await fixtures.load();
+  beforeEach(async () => {
+    await testContext.cleanDatabase();
   });
 
   afterAll(async () => {
-    if (fixtures) {
-      await fixtures.clear();
-    }
-    if (app) {
-      await app.close();
-    }
+    await testContext.cleanup();
   });
 
   describe("/api/customers", () => {
-    it("GET / should return all active customers", () => {
-      return request(app.getHttpServer())
+    it("GET / should return all active customers", async () => {
+      // Create test customers
+      const john = await testContext.johnDoe().build();
+      const jane = await testContext.janeSmith().build();
+      const bob = await testContext.customerBuilder()
+        .withName("Bob Johnson")
+        .withEmail("bob@example.com")
+        .build();
+
+      return request(testContext.getHttpServer())
         .get("/api/customers")
         .expect(200)
         .expect((res) => {
           expect(Array.isArray(res.body)).toBe(true);
-          expect(res.body.length).toBe(fixtures.getCustomers().length);
+          expect(res.body.length).toBe(3);
 
           // Check if all customers are returned
           const emails = res.body.map((customer) => customer.email);
-          expect(emails).toContain("john@example.com");
-          expect(emails).toContain("jane@example.com");
-          expect(emails).toContain("bob@example.com");
+          expect(emails).toContain(john.email);
+          expect(emails).toContain(jane.email);
+          expect(emails).toContain(bob.email);
         });
     });
 
-    it("GET /:id should return customer by id", () => {
-      const customer = fixtures.getCustomers()[0];
+    it("GET /:id should return customer by id", async () => {
+      const customer = await testContext.johnDoe().build();
 
-      return request(app.getHttpServer())
+      return request(testContext.getHttpServer())
         .get(`/api/customers/${customer.id}`)
         .expect(200)
         .expect((res) => {
@@ -71,7 +58,7 @@ describe("CustomerController (e2e)", () => {
     });
 
     it("GET /:id should return 404 for non-existent customer", () => {
-      return request(app.getHttpServer())
+      return request(testContext.getHttpServer())
         .get("/api/customers/00000000-0000-0000-0000-000000000000")
         .expect(404);
     });
@@ -84,7 +71,7 @@ describe("CustomerController (e2e)", () => {
         address: "321 Test St",
       };
 
-      return request(app.getHttpServer())
+      return request(testContext.getHttpServer())
         .post("/api/customers")
         .send(createCustomerDto)
         .expect(201)
@@ -103,20 +90,24 @@ describe("CustomerController (e2e)", () => {
         // Missing required email
       };
 
-      return request(app.getHttpServer())
+      return request(testContext.getHttpServer())
         .post("/api/customers")
         .send(invalidDto)
         .expect(400);
     });
 
-    it("PATCH /:id should update a customer", () => {
-      const customer = fixtures.getUpdateTestCustomers()[0]; // Use specific update test customer
+    it("PATCH /:id should update a customer", async () => {
+      const customer = await testContext.customerBuilder()
+        .withName("Update Test Customer")
+        .withEmail("update.test@example.com")
+        .build();
+
       const updateCustomerDto: UpdateCustomerDto = {
         name: "Updated Name",
         phone: "updated-phone",
       };
 
-      return request(app.getHttpServer())
+      return request(testContext.getHttpServer())
         .patch(`/api/customers/${customer.id}`)
         .send(updateCustomerDto)
         .expect(200)
@@ -129,15 +120,18 @@ describe("CustomerController (e2e)", () => {
         });
     });
 
-    it("DELETE /:id should soft delete a customer", () => {
-      const customer = fixtures.getUpdateTestCustomers()[2]; // Use specific delete test customer
+    it("DELETE /:id should soft delete a customer", async () => {
+      const customer = await testContext.customerBuilder()
+        .withName("Delete Test Customer")
+        .withEmail("delete.test@example.com")
+        .build();
 
-      return request(app.getHttpServer())
+      return request(testContext.getHttpServer())
         .delete(`/api/customers/${customer.id}`)
         .expect(204)
         .then(() => {
           // Verify customer is no longer in the active list
-          return request(app.getHttpServer())
+          return request(testContext.getHttpServer())
             .get("/api/customers")
             .expect(200)
             .expect((res) => {
@@ -147,9 +141,8 @@ describe("CustomerController (e2e)", () => {
         });
     });
 
-    // NEW COMPREHENSIVE TESTS
-    it("POST / should reject duplicate email addresses", () => {
-      const existingCustomer = fixtures.getCustomers()[0];
+    it("POST / should reject duplicate email addresses", async () => {
+      const existingCustomer = await testContext.johnDoe().build();
       const duplicateEmailDto: CreateCustomerDto = {
         name: "Duplicate Test",
         email: existingCustomer.email, // Using existing email
@@ -157,7 +150,7 @@ describe("CustomerController (e2e)", () => {
         address: "999 Test St",
       };
 
-      return request(app.getHttpServer())
+      return request(testContext.getHttpServer())
         .post("/api/customers")
         .send(duplicateEmailDto)
         .expect(409) // Conflict status
@@ -166,8 +159,17 @@ describe("CustomerController (e2e)", () => {
         });
     });
 
-    it("GET /?include_orders=true should return customers with order history", () => {
-      return request(app.getHttpServer())
+    it("GET /?include_orders=true should return customers with order history", async () => {
+      // Create customer with orders
+      const customer = await testContext.johnDoe().build();
+      const product = await testContext.margheritaPizza().build();
+      await testContext.orderBuilder()
+        .withCustomer(customer)
+        .withProducts([product])
+        .delivered()
+        .build();
+
+      return request(testContext.getHttpServer())
         .get("/api/customers?include_orders=true")
         .expect(200)
         .expect((res) => {
@@ -200,7 +202,7 @@ describe("CustomerController (e2e)", () => {
       ];
 
       const promises = invalidEmailFormats.map((email) =>
-        request(app.getHttpServer())
+        request(testContext.getHttpServer())
           .post("/api/customers")
           .send({
             name: "Test User",
@@ -221,7 +223,7 @@ describe("CustomerController (e2e)", () => {
       ];
 
       const promises = testCases.map((data) =>
-        request(app.getHttpServer())
+        request(testContext.getHttpServer())
           .post("/api/customers")
           .send(data)
           .expect(400)
@@ -235,7 +237,7 @@ describe("CustomerController (e2e)", () => {
     });
 
     it("POST / should handle very long field values", () => {
-      return request(app.getHttpServer())
+      return request(testContext.getHttpServer())
         .post("/api/customers")
         .send({
           name: "A".repeat(1000), // Very long name
@@ -246,11 +248,11 @@ describe("CustomerController (e2e)", () => {
         .expect(400); // Should reject due to length constraints
     });
 
-    it("PATCH /:id should prevent email updates to existing emails", () => {
-      const customer1 = fixtures.getCustomers()[0];
-      const customer2 = fixtures.getCustomers()[1];
+    it("PATCH /:id should prevent email updates to existing emails", async () => {
+      const customer1 = await testContext.johnDoe().build();
+      const customer2 = await testContext.janeSmith().build();
 
-      return request(app.getHttpServer())
+      return request(testContext.getHttpServer())
         .patch(`/api/customers/${customer1.id}`)
         .send({ email: customer2.email })
         .expect(409)
@@ -259,12 +261,15 @@ describe("CustomerController (e2e)", () => {
         });
     });
 
-    it("PATCH /:id should allow partial updates", () => {
-      const customer = fixtures.getPartialUpdateTestCustomer(); // Use specific customer for partial updates
+    it("PATCH /:id should allow partial updates", async () => {
+      const customer = await testContext.customerBuilder()
+        .withName("Partial Update Customer")
+        .withEmail("partial.update@example.com")
+        .build();
       const originalEmail = customer.email;
       const originalName = customer.name;
 
-      return request(app.getHttpServer())
+      return request(testContext.getHttpServer())
         .patch(`/api/customers/${customer.id}`)
         .send({ phone: "updated-phone-only" })
         .expect(200)
@@ -275,8 +280,11 @@ describe("CustomerController (e2e)", () => {
         });
     });
 
-    it("GET / should paginate results when limit parameter is provided", () => {
-      return request(app.getHttpServer())
+    it("GET / should paginate results when limit parameter is provided", async () => {
+      // Create some customers for pagination test
+      await testContext.customerBuilder().buildMany(5);
+
+      return request(testContext.getHttpServer())
         .get("/api/customers?limit=2&offset=0")
         .expect(200)
         .expect((res) => {
@@ -285,8 +293,12 @@ describe("CustomerController (e2e)", () => {
         });
     });
 
-    it("GET / should filter customers by active status", () => {
-      return request(app.getHttpServer())
+    it("GET / should filter customers by active status", async () => {
+      // Create active customers
+      await testContext.johnDoe().build();
+      await testContext.janeSmith().build();
+
+      return request(testContext.getHttpServer())
         .get("/api/customers?active=true")
         .expect(200)
         .expect((res) => {
@@ -297,8 +309,11 @@ describe("CustomerController (e2e)", () => {
         });
     });
 
-    it("GET / should search customers by name", () => {
-      return request(app.getHttpServer())
+    it("GET / should search customers by name", async () => {
+      await testContext.johnDoe().build();
+      await testContext.janeSmith().build();
+
+      return request(testContext.getHttpServer())
         .get("/api/customers?search=john")
         .expect(200)
         .expect((res) => {
@@ -310,21 +325,24 @@ describe("CustomerController (e2e)", () => {
     });
 
     it("DELETE /:id should handle non-existent customer gracefully", () => {
-      return request(app.getHttpServer())
+      return request(testContext.getHttpServer())
         .delete("/api/customers/00000000-0000-0000-0000-000000000000")
         .expect(404);
     });
 
     it("DELETE /:id should not permanently delete customer data", async () => {
-      const customer = fixtures.getCustomers()[2];
+      const customer = await testContext.customerBuilder()
+        .withName("Soft Delete Test")
+        .withEmail("soft.delete@example.com")
+        .build();
 
       // Soft delete the customer
-      await request(app.getHttpServer())
+      await request(testContext.getHttpServer())
         .delete(`/api/customers/${customer.id}`)
         .expect(204);
 
       // Customer should not appear in active list
-      const activeCustomers = await request(app.getHttpServer())
+      const activeCustomers = await request(testContext.getHttpServer())
         .get("/api/customers")
         .expect(200);
 
@@ -334,7 +352,7 @@ describe("CustomerController (e2e)", () => {
       expect(foundActive).toBeUndefined();
 
       // But should still exist in database (check by trying to recreate with same email)
-      await request(app.getHttpServer())
+      await request(testContext.getHttpServer())
         .post("/api/customers")
         .send({
           name: "New Customer",
@@ -344,13 +362,13 @@ describe("CustomerController (e2e)", () => {
     });
 
     it("PATCH /:id should update customer timestamps", async () => {
-      const customer = fixtures.getCustomers()[0];
+      const customer = await testContext.johnDoe().build();
       const originalUpdatedAt = customer.updatedAt;
 
       // Wait a bit to ensure timestamp difference
       await new Promise((resolve) => setTimeout(resolve, 100));
 
-      const response = await request(app.getHttpServer())
+      const response = await request(testContext.getHttpServer())
         .patch(`/api/customers/${customer.id}`)
         .send({ phone: "timestamp-test-phone" })
         .expect(200);
@@ -369,7 +387,7 @@ describe("CustomerController (e2e)", () => {
       }));
 
       const createPromises = bulkCustomers.map((customer) =>
-        request(app.getHttpServer())
+        request(testContext.getHttpServer())
           .post("/api/customers")
           .send(customer)
           .expect(201)
@@ -384,7 +402,7 @@ describe("CustomerController (e2e)", () => {
       });
 
       // Verify they appear in the customer list
-      const allCustomers = await request(app.getHttpServer())
+      const allCustomers = await request(testContext.getHttpServer())
         .get("/api/customers")
         .expect(200);
 
@@ -406,7 +424,7 @@ describe("CustomerController (e2e)", () => {
       ];
 
       const promises = validPhoneFormats.map((phone, index) =>
-        request(app.getHttpServer())
+        request(testContext.getHttpServer())
           .post("/api/customers")
           .send({
             name: `Phone Test ${index}`,
@@ -420,15 +438,18 @@ describe("CustomerController (e2e)", () => {
     });
 
     it("should handle customer reactivation after soft delete", async () => {
-      const customer = fixtures.getCustomers()[3];
+      const customer = await testContext.customerBuilder()
+        .withName("Reactivation Test")
+        .withEmail("reactivation@example.com")
+        .build();
 
       // Soft delete
-      await request(app.getHttpServer())
+      await request(testContext.getHttpServer())
         .delete(`/api/customers/${customer.id}`)
         .expect(204);
 
       // Try to create customer with same email (should allow reactivation)
-      const reactivationResponse = await request(app.getHttpServer())
+      const reactivationResponse = await request(testContext.getHttpServer())
         .post("/api/customers")
         .send({
           name: customer.name,
