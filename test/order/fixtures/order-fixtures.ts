@@ -144,6 +144,7 @@ export class OrderFixtures {
     twentyFiveDaysAgo.setDate(now.getDate() - 25);
 
     const orders = [
+      // customer 0 : no loyalty program
       this.orderRepository.create({
         customer: this.customers[0],
         products: [this.products[0], this.products[3]],
@@ -163,6 +164,40 @@ export class OrderFixtures {
       }),
       this.orderRepository.create({
         customer: this.customers[0],
+        products: [this.products[4]],
+        totalAmount: 7.99,
+        status: OrderStatus.READY,
+        createdAt: twentyFiveDaysAgo,
+        updatedAt: twentyFiveDaysAgo
+      }),
+      // customer 1 : enough orders for loyalty program
+      this.orderRepository.create({
+        customer: this.customers[1],
+        products: [this.products[0], this.products[3]],
+        totalAmount: 17.98,
+        status: OrderStatus.DELIVERED,
+        notes: 'Extra cheese please',
+        createdAt: tenDaysAgo,
+        updatedAt: tenDaysAgo
+      }),
+      this.orderRepository.create({
+        customer: this.customers[1],
+        products: [this.products[1], this.products[2], this.products[4]],
+        totalAmount: 31.97,
+        status: OrderStatus.PREPARING,
+        createdAt: fifteenDaysAgo,
+        updatedAt: fifteenDaysAgo
+      }),
+      this.orderRepository.create({
+        customer: this.customers[1],
+        products: [this.products[0], this.products[2]],
+        totalAmount: 21.98,
+        status: OrderStatus.DELIVERED,
+        createdAt: twentyDaysAgo,
+        updatedAt: twentyDaysAgo
+      }),
+      this.orderRepository.create({
+        customer: this.customers[1],
         products: [this.products[4]],
         totalAmount: 7.99,
         status: OrderStatus.READY,

@@ -40,6 +40,8 @@ describe("LoyaltyService (e2e)", () => {
     await app.close();
   });
 
+  //TODO : delete this test. this si tested in the orders test
+
   describe("Loyalty discounts", () => {
     it("should apply 10% discount for customers with more than 3 orders", async () => {
       // Get a customer from fixtures

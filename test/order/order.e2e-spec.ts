@@ -5,6 +5,7 @@ import { AppModule } from "../../src/app.module";
 import { CreateOrderDto } from "../../src/order/dto/create-order.dto";
 import { OrderStatus } from "../../src/entities/order.entity";
 import { OrderFixtures } from "./fixtures/order-fixtures";
+import { getRepositoryToken } from "@nestjs/typeorm";
 
 describe("OrderController (e2e)", () => {
   let app: INestApplication;
@@ -112,6 +113,33 @@ describe("OrderController (e2e)", () => {
         .expect((res) => {
           expect(res.body.status).toBe(OrderStatus.PENDING);
           expect(res.body.totalAmount).toBe(createOrderDto.totalAmount);
+          expect(res.body.notes).toBe(createOrderDto.notes);
+          expect(res.body.customer.id).toBe(customer.id);
+          expect(res.body.products.length).toBe(products.length);
+        });
+    });
+
+    it("POST / should create a new order with discount if applicable", async () => {
+      // Get the customer 1 from fixtures, as he has enough orders for loyalty program
+      const customer = fixtures.getCustomers()[1];
+      const products = fixtures.getProducts().slice(0, 2);
+      const originalTotal = 25.99;
+
+      // Create an order using the orderService directly
+      const createOrderDto: CreateOrderDto = {
+        customerId: customer.id,
+        productIds: products.map((p) => p.id),
+        totalAmount: originalTotal,
+        notes: "Test loyalty discount",
+      };
+
+      return request(app.getHttpServer())
+        .post("/api/orders")
+        .send(createOrderDto)
+        .expect(201)
+        .expect((res) => {
+          expect(res.body.status).toBe(OrderStatus.PENDING);
+          expect(res.body.totalAmount).toBeCloseTo(createOrderDto.totalAmount * 0,9); // Expect 10% discount. Rounding error
           expect(res.body.notes).toBe(createOrderDto.notes);
           expect(res.body.customer.id).toBe(customer.id);
           expect(res.body.products.length).toBe(products.length);
