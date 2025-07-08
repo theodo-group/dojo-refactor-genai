@@ -1,9 +1,9 @@
-import { INestApplication } from '@nestjs/common';
-import { getRepositoryToken } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { Customer } from '../../src/entities/customer.entity';
-import { Product } from '../../src/entities/product.entity';
-import { Order, OrderStatus } from '../../src/entities/order.entity';
+import { INestApplication } from "@nestjs/common";
+import { getRepositoryToken } from "@nestjs/typeorm";
+import { Repository } from "typeorm";
+import { Customer } from "../../src/entities/customer.entity";
+import { Product } from "../../src/entities/product.entity";
+import { Order, OrderStatus } from "../../src/entities/order.entity";
 
 export class GlobalFixtures {
   private app: INestApplication;
@@ -23,27 +23,23 @@ export class GlobalFixtures {
     this.orderRepository = app.get(getRepositoryToken(Order));
   }
 
-  async load(): Promise<void> {
-    // Clear existing data first
-    await this.clear();
+  async load(customers: Customer[]): Promise<void> {
+    this.customers = customers;
 
-    // Create customers
-    this.customers = await this.createCustomers();
-    
     // Create products
     this.products = await this.createProducts();
-    
+
     // Create orders
     this.orders = await this.createOrders();
   }
 
   async clear(): Promise<void> {
     // Delete in the correct order to respect foreign key constraints
-    await this.orderRepository.query('TRUNCATE TABLE order_products CASCADE');
-    await this.orderRepository.query('TRUNCATE TABLE orders CASCADE');
-    await this.productRepository.query('TRUNCATE TABLE products CASCADE');
-    await this.customerRepository.query('TRUNCATE TABLE customers CASCADE');
-    
+    await this.orderRepository.query("TRUNCATE TABLE order_products CASCADE");
+    await this.orderRepository.query("TRUNCATE TABLE orders CASCADE");
+    await this.productRepository.query("TRUNCATE TABLE products CASCADE");
+    await this.customerRepository.query("TRUNCATE TABLE customers CASCADE");
+
     // Reset cached data
     this.customers = [];
     this.products = [];
@@ -64,66 +60,50 @@ export class GlobalFixtures {
   }
 
   // Customer creation
-  private async createCustomers(): Promise<Customer[]> {
-    const customers = [
-      this.customerRepository.create({
-        name: 'John Doe',
-        email: 'john@example.com',
-        phone: '123-456-7890',
-        address: '123 Main St',
-      }),
-      this.customerRepository.create({
-        name: 'Jane Smith',
-        email: 'jane@example.com',
-        phone: '987-654-3210',
-        address: '456 Oak Ave',
-      }),
-      this.customerRepository.create({
-        name: 'Bob Johnson',
-        email: 'bob@example.com',
-        phone: '555-555-5555',
-        address: '789 Pine Rd',
-      }),
-    ];
-    
-    return await this.customerRepository.save(customers);
+  async createCustomers(customers: Partial<Customer>[]): Promise<Customer[]> {
+    const createdCustomers = customers.map((customer) =>
+      this.customerRepository.create(customer)
+    );
+
+    return await this.customerRepository.save(createdCustomers);
   }
 
   // Product creation
   private async createProducts(): Promise<Product[]> {
     const products = [
       this.productRepository.create({
-        name: 'Margherita Pizza',
-        description: 'Classic pizza with tomato sauce and mozzarella',
+        name: "Margherita Pizza",
+        description: "Classic pizza with tomato sauce and mozzarella",
         price: 12.99,
-        category: 'pizza',
+        category: "pizza",
       }),
       this.productRepository.create({
-        name: 'Pepperoni Pizza',
-        description: 'Pizza with tomato sauce, mozzarella, and pepperoni',
+        name: "Pepperoni Pizza",
+        description: "Pizza with tomato sauce, mozzarella, and pepperoni",
         price: 14.99,
-        category: 'pizza',
+        category: "pizza",
       }),
       this.productRepository.create({
-        name: 'Caesar Salad',
-        description: 'Fresh salad with romaine lettuce, croutons, and Caesar dressing',
+        name: "Caesar Salad",
+        description:
+          "Fresh salad with romaine lettuce, croutons, and Caesar dressing",
         price: 8.99,
-        category: 'salad',
+        category: "salad",
       }),
       this.productRepository.create({
-        name: 'Garlic Bread',
-        description: 'Toasted bread with garlic butter',
+        name: "Garlic Bread",
+        description: "Toasted bread with garlic butter",
         price: 4.99,
-        category: 'appetizer',
+        category: "appetizer",
       }),
       this.productRepository.create({
-        name: 'Tiramisu',
-        description: 'Classic Italian dessert with coffee and mascarpone',
+        name: "Tiramisu",
+        description: "Classic Italian dessert with coffee and mascarpone",
         price: 7.99,
-        category: 'dessert',
+        category: "dessert",
       }),
     ];
-    
+
     return await this.productRepository.save(products);
   }
 
@@ -133,13 +113,13 @@ export class GlobalFixtures {
     const now = new Date();
     const tenDaysAgo = new Date(now);
     tenDaysAgo.setDate(now.getDate() - 10);
-    
+
     const fifteenDaysAgo = new Date(now);
     fifteenDaysAgo.setDate(now.getDate() - 15);
-    
+
     const twentyDaysAgo = new Date(now);
     twentyDaysAgo.setDate(now.getDate() - 20);
-    
+
     const twentyFiveDaysAgo = new Date(now);
     twentyFiveDaysAgo.setDate(now.getDate() - 25);
 
@@ -149,9 +129,9 @@ export class GlobalFixtures {
         products: [this.products[0], this.products[3]],
         totalAmount: 17.98,
         status: OrderStatus.DELIVERED,
-        notes: 'Extra cheese please',
+        notes: "Extra cheese please",
         createdAt: tenDaysAgo,
-        updatedAt: tenDaysAgo
+        updatedAt: tenDaysAgo,
       }),
       this.orderRepository.create({
         customer: this.customers[0],
@@ -159,7 +139,7 @@ export class GlobalFixtures {
         totalAmount: 31.97,
         status: OrderStatus.PREPARING,
         createdAt: fifteenDaysAgo,
-        updatedAt: fifteenDaysAgo
+        updatedAt: fifteenDaysAgo,
       }),
       this.orderRepository.create({
         customer: this.customers[0],
@@ -167,7 +147,7 @@ export class GlobalFixtures {
         totalAmount: 21.98,
         status: OrderStatus.DELIVERED,
         createdAt: twentyDaysAgo,
-        updatedAt: twentyDaysAgo
+        updatedAt: twentyDaysAgo,
       }),
       this.orderRepository.create({
         customer: this.customers[0],
@@ -175,10 +155,10 @@ export class GlobalFixtures {
         totalAmount: 7.99,
         status: OrderStatus.READY,
         createdAt: twentyFiveDaysAgo,
-        updatedAt: twentyFiveDaysAgo
+        updatedAt: twentyFiveDaysAgo,
       }),
     ];
-    
+
     return await this.orderRepository.save(orders);
   }
 }
