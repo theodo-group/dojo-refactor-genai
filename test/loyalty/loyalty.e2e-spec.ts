@@ -1,61 +1,54 @@
-import { Test, TestingModule } from "@nestjs/testing";
-import { INestApplication, ValidationPipe } from "@nestjs/common";
-import { AppModule } from "../../src/app.module";
-import { GlobalFixtures } from "../fixtures/global-fixtures";
+import { INestApplication } from "@nestjs/common";
 import { LoyaltyService } from "../../src/loyalty/loyalty.service";
 import { OrderService } from "../../src/order/order.service";
 import { CreateOrderDto } from "../../src/order/dto/create-order.dto";
+import { TestSetup } from "../helpers/test-setup";
+import { TestDataFactory } from "../helpers/test-data-factory";
 
 describe("LoyaltyService (e2e)", () => {
   let app: INestApplication;
-  let fixtures: GlobalFixtures;
+  let dataFactory: TestDataFactory;
   let loyaltyService: LoyaltyService;
   let orderService: OrderService;
 
   beforeAll(async () => {
-    const moduleFixture: TestingModule = await Test.createTestingModule({
-      imports: [AppModule],
-    }).compile();
-
-    app = moduleFixture.createNestApplication();
-    app.useGlobalPipes(
-      new ValidationPipe({
-        whitelist: true,
-        transform: true,
-        forbidNonWhitelisted: true,
-      })
-    );
-    app.setGlobalPrefix("api");
-    await app.init();
-
-    fixtures = new GlobalFixtures(app);
-    await fixtures.load();
+    const setup = await TestSetup.createTestApp();
+    app = setup.app;
+    dataFactory = setup.dataFactory;
 
     loyaltyService = app.get(LoyaltyService);
     orderService = app.get(OrderService);
   });
 
   afterAll(async () => {
-    if (fixtures) {
-      await fixtures.clear();
-    }
-    if (app) {
-      await app.close();
-    }
+    await TestSetup.cleanupTestApp(app, dataFactory);
+  });
+
+  beforeEach(async () => {
+    // Clean up test data before each test to ensure isolation
+    await dataFactory.clearOrders();
+    await dataFactory.clearCustomers();
+    await dataFactory.clearProducts();
   });
 
   describe("Basic Loyalty Features", () => {
     it("should apply 10% discount for customers with more than 3 orders", async () => {
-      const customer = fixtures.getCustomers()[2]; // Bob Johnson
-      const products = fixtures.getProducts().slice(0, 2);
-      const originalTotal = 27.98; // Margherita (12.99) + Pepperoni (14.99)
+      const customer = await dataFactory.createCustomer({
+        name: "Loyalty Test Customer",
+        email: "loyalty-test@example.com",
+      });
+      const products = await dataFactory.createPizzaProducts();
+      const originalTotal = products.reduce(
+        (sum, p) => sum + Number(p.price),
+        0
+      );
 
-      // Create 5 more orders to make customer eligible for 10% discount
+      // Create 5 orders to make customer eligible for 10% discount
       for (let i = 0; i < 5; i++) {
         const createOrderDto: CreateOrderDto = {
           customerId: customer.id,
           productIds: [products[0].id],
-          totalAmount: 12.99,
+          totalAmount: Number(products[0].price),
           notes: `Loyalty test order ${i + 1}`,
         };
         await orderService.create(createOrderDto);
@@ -77,9 +70,15 @@ describe("LoyaltyService (e2e)", () => {
     });
 
     it("should apply progressive discounts based on order count", async () => {
-      const customer = fixtures.getCustomers()[4]; // Charlie Test
-      const products = fixtures.getProducts().slice(0, 2);
-      const originalTotal = 27.98;
+      const customer = await dataFactory.createCustomer({
+        name: "Progressive Discount Customer",
+        email: "progressive@example.com",
+      });
+      const products = await dataFactory.createPizzaProducts();
+      const originalTotal = products.reduce(
+        (sum, p) => sum + Number(p.price),
+        0
+      );
 
       const createOrderDto: CreateOrderDto = {
         customerId: customer.id,
@@ -111,7 +110,7 @@ describe("LoyaltyService (e2e)", () => {
     });
 
     it("should calculate customer loyalty tier correctly", async () => {
-      const customer = fixtures.getCustomers()[0];
+      const { customer } = await dataFactory.createCustomerWithOrders(4);
 
       const tierInfo = await loyaltyService.calculateCustomerTier(customer.id);
 
@@ -127,7 +126,7 @@ describe("LoyaltyService (e2e)", () => {
     });
 
     it("should calculate next order amount with discount", async () => {
-      const customer = fixtures.getCustomers()[0];
+      const { customer } = await dataFactory.createCustomerWithOrders(3);
       const orderAmount = 100.0;
 
       const discountedAmount = await loyaltyService.calculateNextOrderAmount(
@@ -141,7 +140,7 @@ describe("LoyaltyService (e2e)", () => {
     });
 
     it("should get customer loyalty statistics", async () => {
-      const customer = fixtures.getCustomers()[0];
+      const { customer } = await dataFactory.createCustomerWithOrders(3);
 
       const stats = await loyaltyService.getCustomerLoyaltyStats(customer.id);
 
@@ -159,8 +158,7 @@ describe("LoyaltyService (e2e)", () => {
 
   describe("Advanced Loyalty Features", () => {
     it("should calculate loyalty points", async () => {
-      const customer = fixtures.getCustomers()[3];
-      const orderTotal = 50.0;
+      const { customer } = await dataFactory.createCustomerWithOrders(2);
 
       const points = await loyaltyService.calculateLoyaltyPoints(customer.id);
       expect(typeof points).toBe("number");
@@ -168,7 +166,7 @@ describe("LoyaltyService (e2e)", () => {
     });
 
     it("should get loyalty information", async () => {
-      const customer = fixtures.getCustomers()[0];
+      const { customer } = await dataFactory.createCustomerWithOrders(2);
 
       const loyaltyInfo = await loyaltyService.getCustomerLoyaltyInfo(
         customer.id
@@ -182,7 +180,7 @@ describe("LoyaltyService (e2e)", () => {
     });
 
     it("should get loyalty metrics", async () => {
-      const customer = fixtures.getCustomers()[0];
+      const { customer } = await dataFactory.createCustomerWithOrders(2);
 
       const metrics = await loyaltyService.getLoyaltyMetrics(customer.id);
 
@@ -194,7 +192,10 @@ describe("LoyaltyService (e2e)", () => {
     });
 
     it("should handle point adjustments", async () => {
-      const customer = fixtures.getCustomers()[1];
+      const customer = await dataFactory.createCustomer({
+        name: "Point Adjustment Customer",
+        email: "points@example.com",
+      });
 
       const adjustment = await loyaltyService.adjustPoints(
         customer.id,
@@ -208,7 +209,10 @@ describe("LoyaltyService (e2e)", () => {
     });
 
     it("should prevent excessive point adjustments", async () => {
-      const customer = fixtures.getCustomers()[2];
+      const customer = await dataFactory.createCustomer({
+        name: "Excessive Points Customer",
+        email: "excessive@example.com",
+      });
 
       await expect(
         loyaltyService.adjustPoints(customer.id, 999999, "Too many points")
@@ -216,7 +220,10 @@ describe("LoyaltyService (e2e)", () => {
     });
 
     it("should handle loyalty program suspension", async () => {
-      const customer = fixtures.getCustomers()[3];
+      const customer = await dataFactory.createCustomer({
+        name: "Suspension Test Customer",
+        email: "suspension@example.com",
+      });
 
       await loyaltyService.suspendLoyaltyProgram(
         customer.id,
@@ -230,8 +237,18 @@ describe("LoyaltyService (e2e)", () => {
     });
 
     it("should handle loyalty program reactivation", async () => {
-      const customer = fixtures.getCustomers()[3]; // Previously suspended
+      const customer = await dataFactory.createCustomer({
+        name: "Reactivation Test Customer",
+        email: "reactivation@example.com",
+      });
 
+      // First suspend the program
+      await loyaltyService.suspendLoyaltyProgram(
+        customer.id,
+        "Test suspension"
+      );
+
+      // Then reactivate it
       await loyaltyService.reactivateLoyaltyProgram(customer.id);
 
       const loyaltyInfo = await loyaltyService.getCustomerLoyaltyInfo(
@@ -243,7 +260,10 @@ describe("LoyaltyService (e2e)", () => {
 
   describe("Edge Cases", () => {
     it("should handle zero order amounts", async () => {
-      const customer = fixtures.getCustomers()[0];
+      const customer = await dataFactory.createCustomer({
+        name: "Zero Amount Customer",
+        email: "zero@example.com",
+      });
       const zeroAmount = 0;
 
       const discountedAmount = await loyaltyService.calculateNextOrderAmount(
@@ -254,7 +274,10 @@ describe("LoyaltyService (e2e)", () => {
     });
 
     it("should handle expired points", async () => {
-      const customer = fixtures.getCustomers()[0];
+      const customer = await dataFactory.createCustomer({
+        name: "Expired Points Customer",
+        email: "expired@example.com",
+      });
 
       const expiredPoints = await loyaltyService.getExpiredPoints(
         customer.id,
@@ -265,7 +288,7 @@ describe("LoyaltyService (e2e)", () => {
     });
 
     it("should maintain data consistency", async () => {
-      const customer = fixtures.getCustomers()[0];
+      const { customer } = await dataFactory.createCustomerWithOrders(3);
 
       const tierInfo = await loyaltyService.calculateCustomerTier(customer.id);
       const stats = await loyaltyService.getCustomerLoyaltyStats(customer.id);
