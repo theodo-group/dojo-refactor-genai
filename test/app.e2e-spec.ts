@@ -4,6 +4,7 @@ import * as request from "supertest";
 import { AppModule } from "./../src/app.module";
 import { GlobalFixtures } from "./fixtures/global-fixtures";
 import { customerMocks } from "./fixtures/mocks/customer.mocks";
+import { productMocks } from "./fixtures/mocks/product.mocks";
 
 describe("AppController (e2e)", () => {
   let app: INestApplication;
@@ -28,7 +29,8 @@ describe("AppController (e2e)", () => {
     // Initialize fixtures
     fixtures = new GlobalFixtures(app);
     const customers = await fixtures.createCustomers(customerMocks);
-    await fixtures.load(customers);
+    const products = await fixtures.createProducts(productMocks);
+    await fixtures.load(customers, products);
   });
 
   afterAll(async () => {

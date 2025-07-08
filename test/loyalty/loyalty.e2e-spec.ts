@@ -6,6 +6,7 @@ import { LoyaltyService } from "../../src/loyalty/loyalty.service";
 import { OrderService } from "../../src/order/order.service";
 import { CreateOrderDto } from "../../src/order/dto/create-order.dto";
 import { customerMocks } from "../fixtures/mocks/customer.mocks";
+import { productMocks } from "../fixtures/mocks/product.mocks";
 
 describe("LoyaltyService (e2e)", () => {
   let app: INestApplication;
@@ -32,7 +33,8 @@ describe("LoyaltyService (e2e)", () => {
     fixtures = new GlobalFixtures(app);
     await fixtures.clear();
     const customers = await fixtures.createCustomers(customerMocks);
-    await fixtures.load(customers);
+    const products = await fixtures.createProducts(productMocks);
+    await fixtures.load(customers, products);
 
     loyaltyService = app.get(LoyaltyService);
     orderService = app.get(OrderService);

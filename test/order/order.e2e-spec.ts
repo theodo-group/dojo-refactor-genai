@@ -6,6 +6,7 @@ import { GlobalFixtures } from "../fixtures/global-fixtures";
 import { CreateOrderDto } from "../../src/order/dto/create-order.dto";
 import { OrderStatus } from "../../src/entities/order.entity";
 import { customerMocks } from "../fixtures/mocks/customer.mocks";
+import { productMocks } from "../fixtures/mocks/product.mocks";
 
 describe("OrderController (e2e)", () => {
   let app: INestApplication;
@@ -30,7 +31,8 @@ describe("OrderController (e2e)", () => {
     // Initialize fixtures
     fixtures = new GlobalFixtures(app);
     const customers = await fixtures.createCustomers(customerMocks);
-    await fixtures.load(customers);
+    const products = await fixtures.createProducts(productMocks);
+    await fixtures.load(customers, products);
   });
 
   afterAll(async () => {
