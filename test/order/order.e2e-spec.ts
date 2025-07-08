@@ -2,13 +2,22 @@ import { Test, TestingModule } from "@nestjs/testing";
 import { INestApplication, ValidationPipe } from "@nestjs/common";
 import * as request from "supertest";
 import { AppModule } from "../../src/app.module";
-import { GlobalFixtures } from "../fixtures/global-fixtures";
+import { TestDbUtils } from "../utils/test-db.utils";
+import { createCustomer } from "../factories/customer.factory";
+import { createProduct } from "../factories/product.factory";
+import { createOrder } from "../factories/order.factory";
 import { CreateOrderDto } from "../../src/order/dto/create-order.dto";
 import { OrderStatus } from "../../src/entities/order.entity";
+import { Customer } from "../../src/entities/customer.entity";
+import { Product } from "../../src/entities/product.entity";
+import { Order } from "../../src/entities/order.entity";
 
 describe("OrderController (e2e)", () => {
   let app: INestApplication;
-  let fixtures: GlobalFixtures;
+  let testDbUtils: TestDbUtils;
+  let testCustomers: Customer[];
+  let testProducts: Product[];
+  let testOrders: Order[];
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -26,13 +35,82 @@ describe("OrderController (e2e)", () => {
     app.setGlobalPrefix("api");
     await app.init();
 
-    // Initialize fixtures
-    fixtures = new GlobalFixtures(app);
-    await fixtures.load();
+    // Initialize test utilities
+    testDbUtils = new TestDbUtils(app);
+    
+    // Create test data
+    // Create customers
+    const customersData = [
+      createCustomer({ name: 'John Doe', email: 'john@example.com' }),
+      createCustomer({ name: 'Jane Smith', email: 'jane@example.com' }),
+      createCustomer({ name: 'Bob Johnson', email: 'bob@example.com' })
+    ];
+    testCustomers = await testDbUtils.createMultipleCustomers(customersData);
+    
+    // Create products
+    const productsData = [
+      createProduct({ name: 'Margherita Pizza', description: 'Classic pizza with tomato sauce and mozzarella', price: 12.99, category: 'pizza' }),
+      createProduct({ name: 'Pepperoni Pizza', description: 'Pizza with tomato sauce, mozzarella, and pepperoni', price: 14.99, category: 'pizza' }),
+      createProduct({ name: 'Caesar Salad', description: 'Fresh salad with romaine lettuce, croutons, and Caesar dressing', price: 8.99, category: 'salad' }),
+      createProduct({ name: 'Garlic Bread', description: 'Toasted bread with garlic butter', price: 4.99, category: 'appetizer' }),
+      createProduct({ name: 'Tiramisu', description: 'Classic Italian dessert with coffee and mascarpone', price: 7.99, category: 'dessert' })
+    ];
+    testProducts = await testDbUtils.createMultipleProducts(productsData);
+    
+    // Create orders with different dates and statuses
+    const now = new Date();
+    const tenDaysAgo = new Date(now);
+    tenDaysAgo.setDate(now.getDate() - 10);
+    
+    const fifteenDaysAgo = new Date(now);
+    fifteenDaysAgo.setDate(now.getDate() - 15);
+    
+    const twentyDaysAgo = new Date(now);
+    twentyDaysAgo.setDate(now.getDate() - 20);
+    
+    const twentyFiveDaysAgo = new Date(now);
+    twentyFiveDaysAgo.setDate(now.getDate() - 25);
+
+    const ordersData = [
+      createOrder({
+        customer: testCustomers[0],
+        products: [testProducts[0], testProducts[3]],
+        totalAmount: 17.98,
+        status: OrderStatus.DELIVERED,
+        notes: 'Extra cheese please',
+        createdAt: tenDaysAgo,
+        updatedAt: tenDaysAgo
+      }),
+      createOrder({
+        customer: testCustomers[0],
+        products: [testProducts[1], testProducts[2], testProducts[4]],
+        totalAmount: 31.97,
+        status: OrderStatus.PREPARING,
+        createdAt: fifteenDaysAgo,
+        updatedAt: fifteenDaysAgo
+      }),
+      createOrder({
+        customer: testCustomers[0],
+        products: [testProducts[0], testProducts[2]],
+        totalAmount: 21.98,
+        status: OrderStatus.DELIVERED,
+        createdAt: twentyDaysAgo,
+        updatedAt: twentyDaysAgo
+      }),
+      createOrder({
+        customer: testCustomers[0],
+        products: [testProducts[4]],
+        totalAmount: 7.99,
+        status: OrderStatus.READY,
+        createdAt: twentyFiveDaysAgo,
+        updatedAt: twentyFiveDaysAgo
+      }),
+    ];
+    testOrders = await testDbUtils.createMultipleOrders(ordersData);
   });
 
   afterAll(async () => {
-    await fixtures.clear();
+    await testDbUtils.clear();
     await app.close();
   });
 
@@ -43,7 +121,7 @@ describe("OrderController (e2e)", () => {
         .expect(200)
         .expect((res) => {
           expect(Array.isArray(res.body)).toBe(true);
-          expect(res.body.length).toBe(fixtures.getOrders().length);
+          expect(res.body.length).toBe(testOrders.length);
 
           // Check if each order has customer and products
           res.body.forEach((order) => {
@@ -67,7 +145,7 @@ describe("OrderController (e2e)", () => {
     });
 
     it("GET /:id should return order by id", () => {
-      const order = fixtures.getOrders()[0];
+      const order = testOrders[0];
 
       return request(app.getHttpServer())
         .get(`/api/orders/${order.id}`)
@@ -81,7 +159,7 @@ describe("OrderController (e2e)", () => {
     });
 
     it("GET /customer/:customerId should return orders for a customer", () => {
-      const customer = fixtures.getCustomers()[0];
+      const customer = testCustomers[0];
 
       return request(app.getHttpServer())
         .get(`/api/orders/customer/${customer.id}`)
@@ -95,8 +173,8 @@ describe("OrderController (e2e)", () => {
     });
 
     it("POST / should create a new order", () => {
-      const customer = fixtures.getCustomers()[0];
-      const products = fixtures.getProducts().slice(0, 2);
+      const customer = testCustomers[0];
+      const products = testProducts.slice(0, 2);
 
       const createOrderDto: CreateOrderDto = {
         customerId: customer.id,
@@ -119,9 +197,7 @@ describe("OrderController (e2e)", () => {
     });
 
     it("PATCH /:id/status should update order status", () => {
-      const order = fixtures
-        .getOrders()
-        .find((o) => o.status === OrderStatus.READY);
+      const order = testOrders.find((o) => o.status === OrderStatus.READY);
       const newStatus = OrderStatus.DELIVERED;
 
       return request(app.getHttpServer())
@@ -135,9 +211,7 @@ describe("OrderController (e2e)", () => {
     });
 
     it("PATCH /:id/status should prevent invalid status transitions", () => {
-      const order = fixtures
-        .getOrders()
-        .find((o) => o.status === OrderStatus.DELIVERED);
+      const order = testOrders.find((o) => o.status === OrderStatus.DELIVERED);
       const newStatus = OrderStatus.PREPARING;
 
       return request(app.getHttpServer())
@@ -147,13 +221,11 @@ describe("OrderController (e2e)", () => {
     });
 
     it("DELETE /:id should cancel an order", () => {
-      const order = fixtures
-        .getOrders()
-        .find(
-          (o) =>
-            o.status === OrderStatus.PENDING ||
-            o.status === OrderStatus.PREPARING
-        );
+      const order = testOrders.find(
+        (o) =>
+          o.status === OrderStatus.PENDING ||
+          o.status === OrderStatus.PREPARING
+      );
 
       return request(app.getHttpServer())
         .delete(`/api/orders/${order.id}`)
