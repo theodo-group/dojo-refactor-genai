@@ -73,7 +73,9 @@ export class LoyaltyService {
       })
       .getCount();
 
-    const discountRate = this.getDiscountRate(count);
+    // Apply discount based on what the order count will be AFTER this order
+    const nextOrderCount = count + 1;
+    const discountRate = this.getDiscountRate(nextOrderCount);
     const finalAmount = totalAmount * (1 - discountRate);
     return parseFloat(finalAmount.toFixed(2));
   }

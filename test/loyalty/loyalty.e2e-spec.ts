@@ -1,14 +1,14 @@
 import { Test, TestingModule } from "@nestjs/testing";
 import { INestApplication, ValidationPipe } from "@nestjs/common";
 import { AppModule } from "../../src/app.module";
-import { GlobalFixtures } from "../fixtures/global-fixtures";
+import { LoyaltyFixtures } from "../fixtures/loyalty-fixtures";
 import { LoyaltyService } from "../../src/loyalty/loyalty.service";
 import { OrderService } from "../../src/order/order.service";
 import { CreateOrderDto } from "../../src/order/dto/create-order.dto";
 
 describe("LoyaltyService (e2e)", () => {
   let app: INestApplication;
-  let fixtures: GlobalFixtures;
+  let fixtures: LoyaltyFixtures;
   let loyaltyService: LoyaltyService;
   let orderService: OrderService;
 
@@ -28,7 +28,7 @@ describe("LoyaltyService (e2e)", () => {
     app.setGlobalPrefix("api");
     await app.init();
 
-    fixtures = new GlobalFixtures(app);
+    fixtures = new LoyaltyFixtures(app);
     await fixtures.load();
 
     loyaltyService = app.get(LoyaltyService);
@@ -77,7 +77,13 @@ describe("LoyaltyService (e2e)", () => {
     });
 
     it("should apply progressive discounts based on order count", async () => {
-      const customer = fixtures.getCustomers()[4]; // Charlie Test
+      // Create a fresh customer with no order history for this test
+      const customer = await fixtures
+        .getCustomerBuilder()
+        .withName("Progressive Test Customer")
+        .withEmail(`progressive-${Date.now()}@example.com`)
+        .build();
+
       const products = fixtures.getProducts().slice(0, 2);
       const originalTotal = 27.98;
 
@@ -88,7 +94,7 @@ describe("LoyaltyService (e2e)", () => {
         notes: "Testing progressive discounts",
       };
 
-      // Create first 3 orders (no discount)
+      // Create first 3 orders (no discount expected)
       for (let i = 0; i < 3; i++) {
         const order = await orderService.create(createOrderDto);
         expect(order.totalAmount).toBe(originalTotal);

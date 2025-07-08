@@ -2,14 +2,14 @@ import { Test, TestingModule } from "@nestjs/testing";
 import { INestApplication, ValidationPipe } from "@nestjs/common";
 import * as request from "supertest";
 import { AppModule } from "../../src/app.module";
-import { GlobalFixtures } from "../fixtures/global-fixtures";
+import { OrderFixtures } from "../fixtures/order-fixtures";
 import { CreateOrderDto } from "../../src/order/dto/create-order.dto";
 import { UpdateOrderDto } from "../../src/order/dto/update-order.dto";
 import { OrderStatus } from "../../src/entities/order.entity";
 
 describe("OrderController (e2e)", () => {
   let app: INestApplication;
-  let fixtures: GlobalFixtures;
+  let fixtures: OrderFixtures;
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -28,7 +28,7 @@ describe("OrderController (e2e)", () => {
     await app.init();
 
     // Initialize fixtures
-    fixtures = new GlobalFixtures(app);
+    fixtures = new OrderFixtures(app);
     await fixtures.load();
   });
 
@@ -409,7 +409,7 @@ describe("OrderController (e2e)", () => {
     });
 
     it("POST / should handle large orders with many products", () => {
-      const customer = fixtures.getCustomers()[5]; // Update Test Customer - has no prior orders
+      const customer = fixtures.getCustomers()[3]; // Alice Test - use existing customer
       const availableProducts = fixtures
         .getProducts()
         .filter((p) => p.isAvailable !== false)

@@ -2,13 +2,13 @@ import { Test, TestingModule } from "@nestjs/testing";
 import { INestApplication, ValidationPipe } from "@nestjs/common";
 import * as request from "supertest";
 import { AppModule } from "../../src/app.module";
-import { GlobalFixtures } from "../fixtures/global-fixtures";
+import { CustomerFixtures } from "../fixtures/customer-fixtures";
 import { CreateCustomerDto } from "../../src/customer/dto/create-customer.dto";
 import { UpdateCustomerDto } from "../../src/customer/dto/update-customer.dto";
 
 describe("CustomerController (e2e)", () => {
   let app: INestApplication;
-  let fixtures: GlobalFixtures;
+  let fixtures: CustomerFixtures;
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -27,7 +27,7 @@ describe("CustomerController (e2e)", () => {
     await app.init();
 
     // Initialize fixtures
-    fixtures = new GlobalFixtures(app);
+    fixtures = new CustomerFixtures(app);
     await fixtures.load();
   });
 
@@ -316,7 +316,14 @@ describe("CustomerController (e2e)", () => {
     });
 
     it("DELETE /:id should not permanently delete customer data", async () => {
-      const customer = fixtures.getCustomers()[2];
+      // Create a dedicated customer for this test to avoid interference
+      const customer = await fixtures
+        .getCustomerBuilder()
+        .withName("Delete Test Customer")
+        .withEmail(`delete-test-${Date.now()}@example.com`)
+        .withPhone("555-DELETE-1")
+        .withAddress("123 Delete Test St")
+        .build();
 
       // Soft delete the customer
       await request(app.getHttpServer())
