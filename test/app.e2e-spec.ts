@@ -1,41 +1,27 @@
-import { Test, TestingModule } from "@nestjs/testing";
-import { INestApplication, ValidationPipe } from "@nestjs/common";
+import { INestApplication } from "@nestjs/common";
 import * as request from "supertest";
-import { AppModule } from "./../src/app.module";
-import { GlobalFixtures } from "./fixtures/global-fixtures";
+import { TestSetup } from "./helpers/test-setup";
+import { TestDataFactory } from "./helpers/test-data-factory";
 
 describe("AppController (e2e)", () => {
   let app: INestApplication;
-  let fixtures: GlobalFixtures;
+  let dataFactory: TestDataFactory;
 
   beforeAll(async () => {
-    const moduleFixture: TestingModule = await Test.createTestingModule({
-      imports: [AppModule],
-    }).compile();
-
-    app = moduleFixture.createNestApplication();
-    app.useGlobalPipes(
-      new ValidationPipe({
-        whitelist: true,
-        transform: true,
-        forbidNonWhitelisted: true,
-      })
-    );
-    app.setGlobalPrefix("api");
-    await app.init();
-
-    // Initialize fixtures
-    fixtures = new GlobalFixtures(app);
-    await fixtures.load();
+    const setup = await TestSetup.createTestApp();
+    app = setup.app;
+    dataFactory = setup.dataFactory;
   });
 
   afterAll(async () => {
-    if (fixtures) {
-      await fixtures.clear();
-    }
-    if (app) {
-      await app.close();
-    }
+    await TestSetup.cleanupTestApp(app, dataFactory);
+  });
+
+  beforeEach(async () => {
+    // Clean up test data before each test to ensure isolation
+    await dataFactory.clearOrders();
+    await dataFactory.clearCustomers();
+    await dataFactory.clearProducts();
   });
 
   describe("Application Health & Basic Tests", () => {
@@ -123,7 +109,10 @@ describe("AppController (e2e)", () => {
     });
 
     it("should maintain data consistency under concurrent modifications", async () => {
-      const customer = fixtures.getUpdateTestCustomers()[1]; // Use specific customer for concurrent tests
+      const customer = await dataFactory.createCustomer({
+        name: "Concurrent Test Customer",
+        email: "concurrent-test@example.com",
+      });
 
       // Create multiple concurrent update requests
       const updates = Array.from({ length: 5 }, (_, i) =>
