@@ -163,14 +163,6 @@ export class OrderFixtures {
       }),
       this.orderRepository.create({
         customer: this.customers[0],
-        products: [this.products[0], this.products[2]],
-        totalAmount: 21.98,
-        status: OrderStatus.DELIVERED,
-        createdAt: twentyDaysAgo,
-        updatedAt: twentyDaysAgo
-      }),
-      this.orderRepository.create({
-        customer: this.customers[0],
         products: [this.products[4]],
         totalAmount: 7.99,
         status: OrderStatus.READY,
