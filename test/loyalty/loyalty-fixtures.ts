@@ -5,7 +5,7 @@ import { Customer } from '../../src/entities/customer.entity';
 import { Product } from '../../src/entities/product.entity';
 import { Order, OrderStatus } from '../../src/entities/order.entity';
 
-export class GlobalFixtures {
+export class LoyaltyFixtures {
   private app: INestApplication;
   private customerRepository: Repository<Customer>;
   private productRepository: Repository<Product>;
@@ -39,10 +39,10 @@ export class GlobalFixtures {
 
   async clear(): Promise<void> {
     // Delete in the correct order to respect foreign key constraints
-    await this.orderRepository.query('TRUNCATE TABLE order_products CASCADE');
-    await this.orderRepository.query('TRUNCATE TABLE orders CASCADE');
-    await this.productRepository.query('TRUNCATE TABLE products CASCADE');
-    await this.customerRepository.query('TRUNCATE TABLE customers CASCADE');
+    await this.orderRepository.query('TRUNCATE TABLE "order_products" CASCADE');
+    await this.orderRepository.query('TRUNCATE TABLE "orders" CASCADE');
+    await this.productRepository.query('TRUNCATE TABLE "products" CASCADE');
+    await this.customerRepository.query('TRUNCATE TABLE "customers" CASCADE');
     
     // Reset cached data
     this.customers = [];
@@ -77,12 +77,6 @@ export class GlobalFixtures {
         email: 'jane@example.com',
         phone: '987-654-3210',
         address: '456 Oak Ave',
-      }),
-      this.customerRepository.create({
-        name: 'Bob Johnson',
-        email: 'bob@example.com',
-        phone: '555-555-5555',
-        address: '789 Pine Rd',
       }),
     ];
     

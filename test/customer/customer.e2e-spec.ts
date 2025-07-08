@@ -2,13 +2,13 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import * as request from 'supertest';
 import { AppModule } from '../../src/app.module';
-import { GlobalFixtures } from '../fixtures/global-fixtures';
-import { CreateCustomerDto } from '../../src/customer/dto/create-customer.dto';
-import { UpdateCustomerDto } from '../../src/customer/dto/update-customer.dto';
+import { CustomerFixtures } from './customer-fixtures';
+import { CreateCustomerDto } from 'src/customer/dto/create-customer.dto';
+import { UpdateCustomerDto } from 'src/customer/dto/update-customer.dto';
 
 describe('CustomerController (e2e)', () => {
   let app: INestApplication;
-  let fixtures: GlobalFixtures;
+  let fixtures: CustomerFixtures;
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -27,7 +27,7 @@ describe('CustomerController (e2e)', () => {
     await app.init();
 
     // Initialize fixtures
-    fixtures = new GlobalFixtures(app);
+    fixtures = new CustomerFixtures(app);
     await fixtures.load();
   });
 
