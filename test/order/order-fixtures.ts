@@ -145,7 +145,14 @@ export class GlobalFixtures {
         createdAt: twentyDaysAgo,
         updatedAt: twentyDaysAgo
       }),
-    ];
+      this.orderRepository.create({
+        customer: this.customers[1],
+        products: [this.products[0], this.products[2]],
+        totalAmount: 21.98,
+        status: OrderStatus.READY,
+        createdAt: twentyDaysAgo,
+        updatedAt: twentyDaysAgo
+      }),    ];
 
     return await this.orderRepository.save(orders);
   }
