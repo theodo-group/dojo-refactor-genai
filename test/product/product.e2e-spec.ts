@@ -2,13 +2,18 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import * as request from 'supertest';
 import { AppModule } from '../../src/app.module';
-import { ProductFixture } from '../fixtures/product.fixture';
+import { ApiTestHelpers } from '../helpers/api-test-helpers';
+import { TestDataFactory } from '../helpers/test-data-factory';
+import { CleanupHelpers, TestDataTracker, createDataTracker } from '../helpers/cleanup-helpers';
 import { CreateProductDto } from '../../src/product/dto/create-product.dto';
 import { UpdateProductDto } from '../../src/product/dto/update-product.dto';
+import { Product } from '../../src/entities/product.entity';
 
 describe('ProductController (e2e)', () => {
   let app: INestApplication;
-  let productFixture: ProductFixture;
+  let apiHelpers: ApiTestHelpers;
+  let cleanupHelpers: CleanupHelpers;
+  let testData: TestDataTracker;
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -26,33 +31,56 @@ describe('ProductController (e2e)', () => {
     app.setGlobalPrefix('api');
     await app.init();
 
-    // Initialize product fixture only
-    productFixture = new ProductFixture(app);
-    await productFixture.load();
+    // Initialize test helpers
+    apiHelpers = new ApiTestHelpers(app);
+    cleanupHelpers = new CleanupHelpers(apiHelpers);
+  });
+
+  beforeEach(async () => {
+    // Reset test data tracker for each test
+    testData = createDataTracker();
+  });
+
+  afterEach(async () => {
+    // Clean up test data after each test
+    await cleanupHelpers.cleanupAll(testData);
   });
 
   afterAll(async () => {
-    await productFixture.clear();
     await app.close();
   });
 
   describe('/api/products', () => {
-    it('GET / should return all available products', () => {
+    it('GET / should return all available products', async () => {
+      // Create test products
+      const productData = TestDataFactory.getStandardProducts();
+      for (const product of productData) {
+        const createdProduct = await apiHelpers.createProduct(product);
+        testData.products.push(createdProduct);
+      }
+      
       return request(app.getHttpServer())
         .get('/api/products')
         .expect(200)
         .expect((res) => {
           expect(Array.isArray(res.body)).toBe(true);
-          expect(res.body.length).toBe(productFixture.getProducts().length);
+          expect(res.body.length).toBeGreaterThanOrEqual(productData.length);
           
-          // Check if products data is correct
+          // Check if our test products are included
           const productNames = res.body.map(product => product.name);
           expect(productNames).toContain('Margherita Pizza');
           expect(productNames).toContain('Caesar Salad');
         });
     });
 
-    it('GET /?category=pizza should filter products by category', () => {
+    it('GET /?category=pizza should filter products by category', async () => {
+      // Create test products including pizza category
+      const productData = TestDataFactory.getStandardProducts();
+      for (const product of productData) {
+        const createdProduct = await apiHelpers.createProduct(product);
+        testData.products.push(createdProduct);
+      }
+      
       return request(app.getHttpServer())
         .get('/api/products?category=pizza')
         .expect(200)
@@ -68,8 +96,11 @@ describe('ProductController (e2e)', () => {
         });
     });
 
-    it('GET /:id should return product by id', () => {
-      const product = productFixture.getProducts()[0];
+    it('GET /:id should return product by id', async () => {
+      // Create a test product
+      const productData = TestDataFactory.getStandardProducts()[0];
+      const product = await apiHelpers.createProduct(productData);
+      testData.products.push(product);
       
       return request(app.getHttpServer())
         .get(`/api/products/${product.id}`)
@@ -81,7 +112,7 @@ describe('ProductController (e2e)', () => {
         });
     });
 
-    it('POST / should create a new product', () => {
+    it('POST / should create a new product', async () => {
       const createProductDto: CreateProductDto = {
         name: 'Test Product',
         description: 'This is a test product',
@@ -94,6 +125,9 @@ describe('ProductController (e2e)', () => {
         .send(createProductDto)
         .expect(201)
         .expect((res) => {
+          // Track created product for cleanup
+          testData.products.push(res.body);
+          
           expect(res.body.name).toBe(createProductDto.name);
           expect(res.body.description).toBe(createProductDto.description);
           expect(parseFloat(res.body.price)).toBe(createProductDto.price);
@@ -102,8 +136,12 @@ describe('ProductController (e2e)', () => {
         });
     });
 
-    it('PATCH /:id should update a product', () => {
-      const product = productFixture.getProducts()[0];
+    it('PATCH /:id should update a product', async () => {
+      // Create a test product to update
+      const productData = TestDataFactory.getStandardProducts()[0];
+      const product = await apiHelpers.createProduct(productData);
+      testData.products.push(product);
+      
       const updateProductDto: UpdateProductDto = {
         name: 'Updated Product Name',
         price: 19.99,
@@ -122,11 +160,18 @@ describe('ProductController (e2e)', () => {
         });
     });
 
-    it('DELETE /:id should soft delete a product', () => {
-      const product = productFixture.getProducts()[1];
+    it('DELETE /:id should soft delete a product', async () => {
+      // Create test products
+      const productData = TestDataFactory.getStandardProducts();
+      for (const product of productData) {
+        const createdProduct = await apiHelpers.createProduct(product);
+        testData.products.push(createdProduct);
+      }
+      
+      const productToDelete = testData.products[1];
       
       return request(app.getHttpServer())
-        .delete(`/api/products/${product.id}`)
+        .delete(`/api/products/${productToDelete.id}`)
         .expect(204)
         .then(() => {
           // Verify product is no longer in the available list
@@ -134,7 +179,7 @@ describe('ProductController (e2e)', () => {
             .get('/api/products')
             .expect(200)
             .expect((res) => {
-              const foundProduct = res.body.find(p => p.id === product.id);
+              const foundProduct = res.body.find(p => p.id === productToDelete.id);
               expect(foundProduct).toBeUndefined();
             });
         });

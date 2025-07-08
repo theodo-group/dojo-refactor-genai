@@ -30,6 +30,9 @@ export class OrderService {
 
     if (status) {
       query.where("order.status = :status", { status });
+    } else {
+      // Exclude cancelled orders by default (soft deleted orders)
+      query.where("order.status != :cancelledStatus", { cancelledStatus: OrderStatus.CANCELLED });
     }
 
     return query.getMany();

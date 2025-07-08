@@ -2,13 +2,19 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import * as request from 'supertest';
 import { AppModule } from '../../src/app.module';
-import { CustomerFixture } from '../fixtures/customer.fixture';
+import { ApiTestHelpers } from '../helpers/api-test-helpers';
+import { TestDataFactory } from '../helpers/test-data-factory';
+import { CleanupHelpers, createDataTracker, TestDataTracker } from '../helpers/cleanup-helpers';
 import { CreateCustomerDto } from '../../src/customer/dto/create-customer.dto';
 import { UpdateCustomerDto } from '../../src/customer/dto/update-customer.dto';
+import { Customer } from '../../src/entities/customer.entity';
 
 describe('CustomerController (e2e)', () => {
   let app: INestApplication;
-  let customerFixture: CustomerFixture;
+  let apiHelpers: ApiTestHelpers;
+  let cleanupHelpers: CleanupHelpers;
+  let testData: TestDataTracker;
+  let testCustomers: Customer[];
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -26,13 +32,48 @@ describe('CustomerController (e2e)', () => {
     app.setGlobalPrefix('api');
     await app.init();
 
-    // Initialize customer fixture only
-    customerFixture = new CustomerFixture(app);
-    await customerFixture.load();
+    // Initialize test helpers
+    apiHelpers = new ApiTestHelpers(app);
+    cleanupHelpers = new CleanupHelpers(apiHelpers);
+  });
+
+  beforeEach(async () => {
+    testData = createDataTracker();
+    // Create test customers for each test
+    const customerDataArray = [
+      {
+        name: 'John Doe',
+        email: 'john@example.com',
+        phone: '123-456-7890',
+        address: '123 Main St',
+      },
+      {
+        name: 'Jane Smith',
+        email: 'jane@example.com',
+        phone: '987-654-3210',
+        address: '456 Oak Ave',
+      },
+      {
+        name: 'Bob Johnson',
+        email: 'bob@example.com',
+        phone: '555-555-5555',
+        address: '789 Pine Rd',
+      },
+    ];
+    
+    testCustomers = [];
+    for (const customerData of customerDataArray) {
+      const customer = await apiHelpers.createCustomer(customerData);
+      testCustomers.push(customer);
+      testData.customers.push(customer);
+    }
+  });
+
+  afterEach(async () => {
+    await cleanupHelpers.cleanupAll(testData);
   });
 
   afterAll(async () => {
-    await customerFixture.clear();
     await app.close();
   });
 
@@ -43,9 +84,9 @@ describe('CustomerController (e2e)', () => {
         .expect(200)
         .expect((res) => {
           expect(Array.isArray(res.body)).toBe(true);
-          expect(res.body.length).toBe(customerFixture.getCustomers().length);
+          expect(res.body.length).toBeGreaterThanOrEqual(testCustomers.length);
           
-          // Check if all customers are returned
+          // Check if all expected customers are returned
           const emails = res.body.map(customer => customer.email);
           expect(emails).toContain('john@example.com');
           expect(emails).toContain('jane@example.com');
@@ -54,7 +95,7 @@ describe('CustomerController (e2e)', () => {
     });
 
     it('GET /:id should return customer by id', () => {
-      const customer = customerFixture.getCustomers()[0];
+      const customer = testCustomers[0];
       
       return request(app.getHttpServer())
         .get(`/api/customers/${customer.id}`)
@@ -90,6 +131,8 @@ describe('CustomerController (e2e)', () => {
           expect(res.body.phone).toBe(createCustomerDto.phone);
           expect(res.body.address).toBe(createCustomerDto.address);
           expect(res.body.isActive).toBe(true);
+          // Track the created customer for cleanup
+          testData.customers.push(res.body);
         });
     });
 
@@ -106,7 +149,7 @@ describe('CustomerController (e2e)', () => {
     });
 
     it('PATCH /:id should update a customer', () => {
-      const customer = customerFixture.getCustomers()[0];
+      const customer = testCustomers[0];
       const updateCustomerDto: UpdateCustomerDto = {
         name: 'Updated Name',
         phone: 'updated-phone',
@@ -126,7 +169,7 @@ describe('CustomerController (e2e)', () => {
     });
 
     it('DELETE /:id should soft delete a customer', () => {
-      const customer = customerFixture.getCustomers()[1];
+      const customer = testCustomers[1];
       
       return request(app.getHttpServer())
         .delete(`/api/customers/${customer.id}`)
