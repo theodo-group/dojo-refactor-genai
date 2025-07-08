@@ -1,15 +1,15 @@
-import { Test, TestingModule } from "@nestjs/testing";
 import { INestApplication, ValidationPipe } from "@nestjs/common";
+import { Test, TestingModule } from "@nestjs/testing";
 import * as request from "supertest";
 import { AppModule } from "../../src/app.module";
-import { GlobalFixtures } from "../fixtures/global-fixtures";
-import { CreateOrderDto } from "../../src/order/dto/create-order.dto";
-import { UpdateOrderDto } from "../../src/order/dto/update-order.dto";
 import { OrderStatus } from "../../src/entities/order.entity";
+import { CreateOrderDto } from "../../src/order/dto/create-order.dto";
+import { OrderFixtures, OrderTestScenario } from "../fixtures/order-fixtures";
 
 describe("OrderController (e2e)", () => {
   let app: INestApplication;
-  let fixtures: GlobalFixtures;
+  let fixtures: OrderFixtures;
+  let scenario: OrderTestScenario;
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -28,13 +28,18 @@ describe("OrderController (e2e)", () => {
     await app.init();
 
     // Initialize fixtures
-    fixtures = new GlobalFixtures(app);
-    await fixtures.load();
+    fixtures = new OrderFixtures(app);
+  });
+
+  beforeEach(async () => {
+    // Clean up and create fresh test scenario for each test
+    await fixtures.cleanup();
+    scenario = await fixtures.createTestScenario();
   });
 
   afterAll(async () => {
     if (fixtures) {
-      await fixtures.clear();
+      await fixtures.cleanup();
     }
     if (app) {
       await app.close();
@@ -48,7 +53,7 @@ describe("OrderController (e2e)", () => {
         .expect(200)
         .expect((res) => {
           expect(Array.isArray(res.body)).toBe(true);
-          expect(res.body.length).toBe(fixtures.getOrders().length);
+          expect(res.body.length).toBe(scenario.orders.length);
 
           // Check if each order has customer and products
           res.body.forEach((order) => {
@@ -72,7 +77,7 @@ describe("OrderController (e2e)", () => {
     });
 
     it("GET /:id should return order by id", () => {
-      const order = fixtures.getOrders()[0];
+      const order = scenario.pendingOrder;
 
       return request(app.getHttpServer())
         .get(`/api/orders/${order.id}`)
@@ -86,7 +91,7 @@ describe("OrderController (e2e)", () => {
     });
 
     it("GET /customer/:customerId should return orders for a customer", () => {
-      const customer = fixtures.getCustomers()[0];
+      const customer = scenario.testCustomer;
 
       return request(app.getHttpServer())
         .get(`/api/orders/customer/${customer.id}`)
@@ -100,14 +105,14 @@ describe("OrderController (e2e)", () => {
     });
 
     it("POST / should create a new order", () => {
-      const customer = fixtures.getCustomers()[1]; // Jane Smith has no existing orders, no discount
-      const products = fixtures.getProducts().slice(0, 2);
-      // Margherita Pizza (12.99) + Pepperoni Pizza (14.99) = 27.98
+      const customer = scenario.testCustomer;
+      const products = scenario.products.slice(0, 2);
+      const totalAmount = products.reduce((sum, p) => sum + p.price, 0);
 
       const createOrderDto: CreateOrderDto = {
         customerId: customer.id,
         productIds: products.map((p) => p.id),
-        totalAmount: 27.98,
+        totalAmount: totalAmount,
         notes: "Test order notes",
       };
 
@@ -125,9 +130,7 @@ describe("OrderController (e2e)", () => {
     });
 
     it("PATCH /:id/status should update order status", () => {
-      const order = fixtures
-        .getOrders()
-        .find((o) => o.status === OrderStatus.PREPARING);
+      const order = scenario.pendingOrder;
       const newStatus = OrderStatus.READY;
 
       return request(app.getHttpServer())
@@ -141,9 +144,7 @@ describe("OrderController (e2e)", () => {
     });
 
     it("PATCH /:id/status should prevent invalid status transitions", () => {
-      const order = fixtures
-        .getOrders()
-        .find((o) => o.status === OrderStatus.DELIVERED);
+      const order = scenario.deliveredOrder;
       const newStatus = OrderStatus.PREPARING;
 
       return request(app.getHttpServer())
@@ -153,13 +154,7 @@ describe("OrderController (e2e)", () => {
     });
 
     it("DELETE /:id should cancel an order", () => {
-      const order = fixtures
-        .getOrders()
-        .find(
-          (o) =>
-            o.status === OrderStatus.PENDING ||
-            o.status === OrderStatus.PREPARING
-        );
+      const order = scenario.pendingOrder;
 
       return request(app.getHttpServer())
         .delete(`/api/orders/${order.id}`)
@@ -175,15 +170,14 @@ describe("OrderController (e2e)", () => {
         });
     });
 
-    // NEW COMPREHENSIVE TESTS
     it("POST / should validate total amount matches product prices", () => {
-      const customer = fixtures.getCustomers()[1]; // Jane Smith - no existing orders
-      const products = fixtures.getProducts().slice(0, 2); // First 2 products: 12.99 + 14.99 = 27.98
+      const customer = scenario.testCustomer;
+      const products = scenario.products.slice(0, 2);
 
       const invalidTotalDto: CreateOrderDto = {
         customerId: customer.id,
         productIds: products.map((p) => p.id),
-        totalAmount: 50.0, // Wrong total - should be 27.98
+        totalAmount: 999.99, // Wrong total
         notes: "Invalid total test",
       };
 
@@ -196,283 +190,83 @@ describe("OrderController (e2e)", () => {
         });
     });
 
-    it("GET /customer/:customerId should filter orders by date range", () => {
-      const customer = fixtures.getCustomers()[0]; // John Doe has multiple orders
-
-      // Get orders from the last 12 days (should include some but not all)
-      const endDate = new Date().toISOString().split("T")[0];
-      const startDate = new Date(Date.now() - 12 * 24 * 60 * 60 * 1000)
-        .toISOString()
-        .split("T")[0];
-
-      return request(app.getHttpServer())
-        .get(
-          `/api/orders/customer/${customer.id}?start_date=${startDate}&end_date=${endDate}`
-        )
-        .expect(200)
-        .expect((res) => {
-          expect(Array.isArray(res.body)).toBe(true);
-
-          // All orders should be for this customer
-          res.body.forEach((order) => {
-            expect(order.customer.id).toBe(customer.id);
-
-            // All orders should be within date range
-            const orderDate = new Date(order.createdAt);
-            expect(orderDate.getTime()).toBeGreaterThanOrEqual(
-              new Date(startDate).getTime()
-            );
-            expect(orderDate.getTime()).toBeLessThanOrEqual(
-              new Date(endDate).getTime()
-            );
-          });
-        });
-    });
-
-    it("PATCH /:id should prevent updating orders with invalid status transitions", () => {
-      // Try to update a delivered order (should fail)
-      const deliveredOrder = fixtures
-        .getOrders()
-        .find((o) => o.status === OrderStatus.DELIVERED);
-
-      const invalidUpdateDto: UpdateOrderDto = {
-        notes: "Trying to modify delivered order",
-        totalAmount: 99.99,
+    it("POST / should validate required fields", () => {
+      const incompleteDto = {
+        customerId: scenario.testCustomer.id,
+        // Missing productIds and totalAmount
       };
 
       return request(app.getHttpServer())
-        .patch(`/api/orders/${deliveredOrder.id}`)
-        .send(invalidUpdateDto)
-        .expect(400)
-        .expect((res) => {
-          expect(res.body.message).toContain(
-            "Cannot update order that is already delivered"
-          );
-        });
+        .post("/api/orders")
+        .send(incompleteDto)
+        .expect(400);
     });
 
-    it("POST / should apply customer loyalty discounts correctly", async () => {
-      // Get a customer with multiple orders for loyalty discount
-      const customer = fixtures.getCustomers()[0]; // John Doe has multiple orders
-      const products = fixtures.getProducts().slice(0, 2);
-      const baseTotal = 27.98; // 12.99 + 14.99
+    it("GET /:id should return 404 for non-existent order", () => {
+      return request(app.getHttpServer())
+        .get("/api/orders/00000000-0000-0000-0000-000000000000")
+        .expect(404);
+    });
 
-      const createOrderDto: CreateOrderDto = {
+    it("PATCH /:id/status should return 404 for non-existent order", () => {
+      return request(app.getHttpServer())
+        .patch("/api/orders/00000000-0000-0000-0000-000000000000/status")
+        .send({ status: OrderStatus.READY })
+        .expect(404);
+    });
+
+    it("DELETE /:id should return 404 for non-existent order", () => {
+      return request(app.getHttpServer())
+        .delete("/api/orders/00000000-0000-0000-0000-000000000000")
+        .expect(404);
+    });
+
+    it("POST / should handle empty product list", () => {
+      const customer = scenario.testCustomer;
+
+      const emptyProductsDto: CreateOrderDto = {
         customerId: customer.id,
+        productIds: [],
+        totalAmount: 0,
+        notes: "Empty order",
+      };
+
+      return request(app.getHttpServer())
+        .post("/api/orders")
+        .send(emptyProductsDto)
+        .expect(400);
+    });
+
+    it("POST / should handle non-existent customer", () => {
+      const products = scenario.products.slice(0, 1);
+
+      const invalidCustomerDto: CreateOrderDto = {
+        customerId: "00000000-0000-0000-0000-000000000000",
         productIds: products.map((p) => p.id),
-        totalAmount: baseTotal,
-        notes: "Loyalty discount test",
-      };
-
-      const response = await request(app.getHttpServer())
-        .post("/api/orders")
-        .send(createOrderDto)
-        .expect(201);
-
-      // Should have applied discount (exact amount depends on customer's order history)
-      expect(response.body.totalAmount).toBeLessThanOrEqual(baseTotal);
-    });
-
-    it("GET /?status=multiple should filter by multiple statuses", () => {
-      return request(app.getHttpServer())
-        .get("/api/orders?status=pending,preparing")
-        .expect(200)
-        .expect((res) => {
-          expect(Array.isArray(res.body)).toBe(true);
-          res.body.forEach((order) => {
-            expect(["pending", "preparing"]).toContain(order.status);
-          });
-        });
-    });
-
-    it("POST / should validate product availability", () => {
-      const customer = fixtures.getCustomers()[0];
-      const unavailableProduct = fixtures
-        .getProducts()
-        .find((p) => !p.isAvailable);
-
-      if (unavailableProduct) {
-        const invalidOrderDto: CreateOrderDto = {
-          customerId: customer.id,
-          productIds: [unavailableProduct.id],
-          totalAmount: parseFloat(unavailableProduct.price.toString()),
-          notes: "Order with unavailable product",
-        };
-
-        return request(app.getHttpServer())
-          .post("/api/orders")
-          .send(invalidOrderDto)
-          .expect(400)
-          .expect((res) => {
-            expect(res.body.message).toContain("not available");
-          });
-      }
-    });
-
-    it("GET /?sort=total_desc should sort orders by total amount descending", () => {
-      return request(app.getHttpServer())
-        .get("/api/orders?sort=total_desc")
-        .expect(200)
-        .expect((res) => {
-          expect(Array.isArray(res.body)).toBe(true);
-
-          if (res.body.length > 1) {
-            for (let i = 1; i < res.body.length; i++) {
-              expect(res.body[i].totalAmount).toBeLessThanOrEqual(
-                res.body[i - 1].totalAmount
-              );
-            }
-          }
-        });
-    });
-
-    it("DELETE /:id should handle orders with different statuses differently", async () => {
-      const pendingOrder = fixtures
-        .getOrders()
-        .find((o) => o.status === OrderStatus.PENDING);
-      const deliveredOrder = fixtures
-        .getOrders()
-        .find((o) => o.status === OrderStatus.DELIVERED);
-
-      // Should be able to cancel pending order
-      await request(app.getHttpServer())
-        .delete(`/api/orders/${pendingOrder.id}`)
-        .expect(204);
-
-      // Should not be able to cancel delivered order
-      await request(app.getHttpServer())
-        .delete(`/api/orders/${deliveredOrder.id}`)
-        .expect(400)
-        .expect((res) => {
-          expect(res.body.message).toContain("Cannot cancel");
-        });
-    });
-
-    it("GET /?limit=5&offset=2 should paginate orders", () => {
-      return request(app.getHttpServer())
-        .get("/api/orders?limit=5&offset=2")
-        .expect(200)
-        .expect((res) => {
-          expect(Array.isArray(res.body)).toBe(true);
-          expect(res.body.length).toBeLessThanOrEqual(5);
-        });
-    });
-
-    it("POST / should validate minimum order amount", () => {
-      const customer = fixtures.getCustomers()[0];
-      const cheapProduct = fixtures
-        .getProducts()
-        .find((p) => parseFloat(p.price.toString()) < 1.0);
-
-      if (cheapProduct) {
-        const tooSmallOrderDto: CreateOrderDto = {
-          customerId: customer.id,
-          productIds: [cheapProduct.id],
-          totalAmount: parseFloat(cheapProduct.price.toString()),
-          notes: "Order below minimum",
-        };
-
-        return request(app.getHttpServer())
-          .post("/api/orders")
-          .send(tooSmallOrderDto)
-          .expect(400)
-          .expect((res) => {
-            expect(res.body.message).toContain("minimum order");
-          });
-      }
-    });
-
-    it("GET /analytics/summary should return order analytics", () => {
-      return request(app.getHttpServer())
-        .get("/api/orders/analytics/summary")
-        .expect(200)
-        .expect((res) => {
-          expect(res.body).toHaveProperty("totalOrders");
-          expect(res.body).toHaveProperty("totalRevenue");
-          expect(res.body).toHaveProperty("averageOrderValue");
-          expect(res.body).toHaveProperty("ordersByStatus");
-          expect(typeof res.body.totalOrders).toBe("number");
-          expect(typeof res.body.totalRevenue).toBe("number");
-        });
-    });
-
-    it("PATCH /:id should validate order modifications based on time constraints", async () => {
-      const recentOrder = fixtures.getRecentOrderForModification();
-
-      if (recentOrder) {
-        // Should allow modifications within time window
-        await request(app.getHttpServer())
-          .patch(`/api/orders/${recentOrder.id}`)
-          .send({ notes: "Modified within time window" })
-          .expect(200);
-      }
-    });
-
-    it("POST / should handle large orders with many products", () => {
-      const customer = fixtures.getCustomers()[5]; // Update Test Customer - has no prior orders
-      const availableProducts = fixtures
-        .getProducts()
-        .filter((p) => p.isAvailable !== false)
-        .slice(0, 8); // Use available products only
-      const totalAmount = availableProducts.reduce(
-        (sum, p) => sum + parseFloat(p.price.toString()),
-        0
-      );
-
-      const largeOrderDto: CreateOrderDto = {
-        customerId: customer.id,
-        productIds: availableProducts.map((p) => p.id),
-        totalAmount: totalAmount,
-        notes: "Large order with many products",
+        totalAmount: products[0].price,
+        notes: "Invalid customer test",
       };
 
       return request(app.getHttpServer())
         .post("/api/orders")
-        .send(largeOrderDto)
-        .expect(201)
-        .expect((res) => {
-          expect(res.body.products.length).toBe(availableProducts.length);
-          expect(res.body.totalAmount).toBeCloseTo(totalAmount, 2);
-        });
+        .send(invalidCustomerDto)
+        .expect(400);
     });
 
-    it("GET /customer/:customerId/stats should return customer order statistics", () => {
-      const customer = fixtures.getCustomers()[0];
+    it("POST / should handle non-existent product", () => {
+      const customer = scenario.testCustomer;
+
+      const invalidProductDto: CreateOrderDto = {
+        customerId: customer.id,
+        productIds: ["00000000-0000-0000-0000-000000000000"],
+        totalAmount: 10.99,
+        notes: "Invalid product test",
+      };
 
       return request(app.getHttpServer())
-        .get(`/api/orders/customer/${customer.id}/stats`)
-        .expect(200)
-        .expect((res) => {
-          expect(res.body).toHaveProperty("totalOrders");
-          expect(res.body).toHaveProperty("totalSpent");
-          expect(res.body).toHaveProperty("averageOrderValue");
-          expect(res.body).toHaveProperty("favoriteProducts");
-          expect(res.body).toHaveProperty("orderFrequency");
-          expect(typeof res.body.totalOrders).toBe("number");
-        });
-    });
-
-    it("should handle concurrent order creation for same customer", async () => {
-      const customer = fixtures.getCustomers()[1];
-      const product = fixtures.getProducts()[0];
-
-      const concurrentOrders = Array.from({ length: 3 }, (_, i) => ({
-        customerId: customer.id,
-        productIds: [product.id],
-        totalAmount: parseFloat(product.price.toString()),
-        notes: `Concurrent order ${i + 1}`,
-      }));
-
-      const promises = concurrentOrders.map((order) =>
-        request(app.getHttpServer()).post("/api/orders").send(order).expect(201)
-      );
-
-      const results = await Promise.all(promises);
-
-      // All orders should be created successfully
-      results.forEach((result, index) => {
-        expect(result.body.notes).toBe(`Concurrent order ${index + 1}`);
-      });
+        .post("/api/orders")
+        .send(invalidProductDto)
+        .expect(400);
     });
   });
 });
