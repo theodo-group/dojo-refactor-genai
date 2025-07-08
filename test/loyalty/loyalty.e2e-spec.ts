@@ -1,14 +1,14 @@
 import { Test, TestingModule } from "@nestjs/testing";
 import { INestApplication, ValidationPipe } from "@nestjs/common";
 import { AppModule } from "../../src/app.module";
-import { GlobalFixtures } from "../fixtures/global-fixtures";
+import { LoyaltyFixtures } from "./loyalty-fixtures";
 import { LoyaltyService } from "../../src/loyalty/loyalty.service";
 import { OrderService } from "../../src/order/order.service";
 import { CreateOrderDto } from "../../src/order/dto/create-order.dto";
 
 describe("LoyaltyService (e2e)", () => {
   let app: INestApplication;
-  let fixtures: GlobalFixtures;
+  let fixtures: LoyaltyFixtures;
   let loyaltyService: LoyaltyService;
   let orderService: OrderService;
 
@@ -28,7 +28,7 @@ describe("LoyaltyService (e2e)", () => {
     app.setGlobalPrefix("api");
     await app.init();
 
-    fixtures = new GlobalFixtures(app);
+    fixtures = new LoyaltyFixtures(app);
     await fixtures.load();
 
     loyaltyService = app.get(LoyaltyService);
@@ -45,7 +45,7 @@ describe("LoyaltyService (e2e)", () => {
       // Get a customer from fixtures
       const customer = fixtures.getCustomers()[0];
       const products = fixtures.getProducts().slice(0, 2);
-      const originalTotal = 25.99;
+      const originalTotal = 28.99;
 
       // Create an order using the orderService directly
       const createOrderDto: CreateOrderDto = {
