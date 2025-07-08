@@ -5,7 +5,7 @@ import { Customer } from '../../src/entities/customer.entity';
 import { Product } from '../../src/entities/product.entity';
 import { Order, OrderStatus } from '../../src/entities/order.entity';
 
-export class GlobalFixtures {
+export class LoyaltyFixtures {
   private app: INestApplication;
   private customerRepository: Repository<Customer>;
   private productRepository: Repository<Product>;
@@ -72,18 +72,6 @@ export class GlobalFixtures {
         phone: '123-456-7890',
         address: '123 Main St',
       }),
-      this.customerRepository.create({
-        name: 'Jane Smith',
-        email: 'jane@example.com',
-        phone: '987-654-3210',
-        address: '456 Oak Ave',
-      }),
-      this.customerRepository.create({
-        name: 'Bob Johnson',
-        email: 'bob@example.com',
-        phone: '555-555-5555',
-        address: '789 Pine Rd',
-      }),
     ];
     
     return await this.customerRepository.save(customers);
@@ -129,6 +117,19 @@ export class GlobalFixtures {
 
   // Order creation
   private async createOrders(): Promise<Order[]> {
+    const now = new Date();
+    const tenDaysAgo = new Date(now);
+    tenDaysAgo.setDate(now.getDate() - 10);
+    
+    const fifteenDaysAgo = new Date(now);
+    fifteenDaysAgo.setDate(now.getDate() - 15);
+    
+    const twentyDaysAgo = new Date(now);
+    twentyDaysAgo.setDate(now.getDate() - 20);
+    
+    const twentyFiveDaysAgo = new Date(now);
+    twentyFiveDaysAgo.setDate(now.getDate() - 25);
+
     const orders = [
       this.orderRepository.create({
         customer: this.customers[0],
@@ -136,24 +137,32 @@ export class GlobalFixtures {
         totalAmount: 17.98,
         status: OrderStatus.DELIVERED,
         notes: 'Extra cheese please',
+        createdAt: tenDaysAgo,
+        updatedAt: tenDaysAgo
       }),
       this.orderRepository.create({
-        customer: this.customers[1],
+        customer: this.customers[0],
         products: [this.products[1], this.products[2], this.products[4]],
         totalAmount: 31.97,
         status: OrderStatus.PREPARING,
+        createdAt: fifteenDaysAgo,
+        updatedAt: fifteenDaysAgo
       }),
       this.orderRepository.create({
-        customer: this.customers[2],
+        customer: this.customers[0],
         products: [this.products[0], this.products[2]],
         totalAmount: 21.98,
-        status: OrderStatus.PENDING,
+        status: OrderStatus.DELIVERED,
+        createdAt: twentyDaysAgo,
+        updatedAt: twentyDaysAgo
       }),
       this.orderRepository.create({
         customer: this.customers[0],
         products: [this.products[4]],
         totalAmount: 7.99,
         status: OrderStatus.READY,
+        createdAt: twentyFiveDaysAgo,
+        updatedAt: twentyFiveDaysAgo
       }),
     ];
     
