@@ -9,12 +9,13 @@ This project demonstrates a NestJS application with end-to-end tests using globa
 ## How does the exercise work ?
 
 To get to an level (there are 3 levels), use
- ```bash
-   git checkout tags/lvl-1
-   ```
+
+```bash
+  git checkout tags/lvl-1
+```
+
 Always make sure you have a way to store your prompt and the results (most AI tools now have historiaztion features)
 Store your results in branches with the name dojo/date/yourname/lvl-1/try-1, and push the branches
-
 
 ## Technical Overview
 
@@ -39,11 +40,13 @@ Store your results in branches with the name dojo/date/yourname/lvl-1/try-1, and
 
 1. Clone the repository
 2. Install dependencies:
+
    ```bash
    pnpm install
    ```
 
 3. Start the test database:
+
    ```bash
    docker-compose up -d
    ```
@@ -59,8 +62,53 @@ Store your results in branches with the name dojo/date/yourname/lvl-1/try-1, and
   - `/customer` - Customer module, controller, service, DTOs
   - `/product` - Product module, controller, service, DTOs
   - `/order` - Order module, controller, service, DTOs
-  - `/loyalty` - Loyalty service module, controller, service, DTOs - the new service with the first issues of global fixtures
+  - `/loyalty` - Loyalty service module, controller, service, DTOs
   - `/entities` - Database entity definitions
   - `/migrations` - Database migrations
-  - `/test` - End-to-end tests
-  - `/fixtures` - Global test fixtures
+- `/test` - End-to-end tests
+  - `/helpers` - Test helper utilities (TestDataFactory, TestSetup)
+  - Individual test files for each module
+
+## Test Architecture
+
+The test suite has been refactored to eliminate shared global fixtures and improve test isolation:
+
+### Before Refactoring
+
+- **Global Fixtures**: All tests shared a single `GlobalFixtures` class
+- **Interdependent Tests**: Tests relied on specific fixture data and could break when other tests modified shared state
+- **Complex Setup**: Fixtures created complex relationships between customers, orders, and products
+- **Test Coupling**: Tests could not run independently or in different orders
+
+### After Refactoring
+
+- **Independent Test Data**: Each test creates only the data it needs using `TestDataFactory`
+- **Test Isolation**: Tests clean up their data before each run, ensuring no interference
+- **Focused Data Creation**: Helper methods create specific scenarios (e.g., `createCustomerWithOrders()`, `createPizzaProducts()`)
+- **Flexible Test Execution**: Tests can run in any order and are completely independent
+
+### Key Components
+
+#### TestDataFactory
+
+- **Purpose**: Creates test data on-demand for individual tests
+- **Methods**:
+  - `createCustomer()`, `createProduct()`, `createOrder()`
+  - `createCustomerWithOrders()` for loyalty testing
+  - `createPizzaProducts()` for common product scenarios
+  - `clearCustomers()`, `clearProducts()`, `clearOrders()` for cleanup
+
+#### TestSetup
+
+- **Purpose**: Provides consistent test application setup and teardown
+- **Methods**:
+  - `createTestApp()` - Sets up NestJS application with proper configuration
+  - `cleanupTestApp()` - Ensures proper cleanup after tests complete
+
+### Benefits of the New Approach
+
+- ✅ **Test Isolation**: Each test is completely independent
+- ✅ **Maintainability**: Easy to understand what data each test needs
+- ✅ **Reliability**: No more mysterious test failures due to shared state
+- ✅ **Performance**: Tests only create the minimal data they need
+- ✅ **Flexibility**: Tests can run in parallel or any order
