@@ -8,6 +8,7 @@ import { Customer } from "../../src/entities/customer.entity";
 import { Product } from "../../src/entities/product.entity";
 import { Repository } from "typeorm";
 import { getRepositoryToken } from "@nestjs/typeorm";
+import { BadRequestException } from "@nestjs/common";
 
 export type MockType<T> = {
   [P in keyof T]?: jest.Mock<{}>;
@@ -93,6 +94,25 @@ describe("OrderService", () => {
             products: [product1, product2],
             totalAmount: 124.99,
         })
+      }
+    );
+
+    it.each(orderTestSet)(
+      "should throw if a product is not available",
+      async () => {
+        const foundCustomer = new Customer();
+        const product1 = new Product();
+        product1.isAvailable = false;
+        product1.name = "Carotte";
+
+        jest.spyOn(customerService, "findOne").mockResolvedValue(foundCustomer);
+        jest
+          .spyOn(productService, "findOne")
+          .mockReturnValue(Promise.resolve(product1));
+
+        await expect(orderService.create({ customerId: "1", productIds: ["product1"], totalAmount: 2 }))
+        .rejects
+        .toBeInstanceOf(BadRequestException);
       }
     );
   });
