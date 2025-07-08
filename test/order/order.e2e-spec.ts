@@ -66,14 +66,6 @@ describe("OrderController (e2e)", () => {
       },
       {
         customer: customers[0],
-        products: [products[0], products[2]],
-        totalAmount: 21.98,
-        status: OrderStatus.DELIVERED,
-        createdAt: twentyDaysAgo,
-        updatedAt: twentyDaysAgo,
-      },
-      {
-        customer: customers[0],
         products: [products[4]],
         totalAmount: 7.99,
         status: OrderStatus.READY,
