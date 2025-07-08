@@ -1,4 +1,4 @@
-import { IsArray, IsNotEmpty, IsNumber, IsOptional, IsString, IsUUID, Min } from 'class-validator';
+import { IsArray, IsNotEmpty, IsOptional, IsString, IsUUID } from 'class-validator';
 
 export class CreateOrderDto {
   @IsNotEmpty()
@@ -9,11 +9,6 @@ export class CreateOrderDto {
   @IsArray()
   @IsUUID('4', { each: true })
   productIds: string[];
-
-  @IsNotEmpty()
-  @IsNumber()
-  @Min(0)
-  totalAmount: number;
 
   @IsOptional()
   @IsString()

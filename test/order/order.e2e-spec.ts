@@ -1,10 +1,10 @@
-import { Test, TestingModule } from "@nestjs/testing";
 import { INestApplication, ValidationPipe } from "@nestjs/common";
+import { Test, TestingModule } from "@nestjs/testing";
 import * as request from "supertest";
 import { AppModule } from "../../src/app.module";
-import { GlobalFixtures } from "../fixtures/global-fixtures";
-import { CreateOrderDto } from "../../src/order/dto/create-order.dto";
 import { OrderStatus } from "../../src/entities/order.entity";
+import { CreateOrderDto } from "../../src/order/dto/create-order.dto";
+import { GlobalFixtures } from "../fixtures/global-fixtures";
 
 describe("OrderController (e2e)", () => {
   let app: INestApplication;
@@ -97,11 +97,11 @@ describe("OrderController (e2e)", () => {
     it("POST / should create a new order", () => {
       const customer = fixtures.getCustomers()[0];
       const products = fixtures.getProducts().slice(0, 2);
+      console.log({ products })
 
       const createOrderDto: CreateOrderDto = {
         customerId: customer.id,
         productIds: products.map((p) => p.id),
-        totalAmount: 30.5,
         notes: "Test order notes",
       };
 
@@ -111,7 +111,6 @@ describe("OrderController (e2e)", () => {
         .expect(201)
         .expect((res) => {
           expect(res.body.status).toBe(OrderStatus.PENDING);
-          expect(res.body.totalAmount).toBe(createOrderDto.totalAmount);
           expect(res.body.notes).toBe(createOrderDto.notes);
           expect(res.body.customer.id).toBe(customer.id);
           expect(res.body.products.length).toBe(products.length);

@@ -1,16 +1,16 @@
 import {
+  BadRequestException,
   Injectable,
   NotFoundException,
-  BadRequestException,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
-import { Order, OrderStatus } from "../entities/order.entity";
 import { CustomerService } from "../customer/customer.service";
+import { Order, OrderStatus } from "../entities/order.entity";
+import { LoyaltyService } from "../loyalty/loyalty.service";
 import { ProductService } from "../product/product.service";
 import { CreateOrderDto } from "./dto/create-order.dto";
 import { UpdateOrderDto } from "./dto/update-order.dto";
-import { LoyaltyService } from "../loyalty/loyalty.service";
 
 @Injectable()
 export class OrderService {
@@ -56,7 +56,7 @@ export class OrderService {
   }
 
   async create(createOrderDto: CreateOrderDto): Promise<Order> {
-    const { customerId, productIds, totalAmount, notes } = createOrderDto;
+    const { customerId, productIds, notes } = createOrderDto;
 
     const customer = await this.customerService.findOne(customerId);
 
@@ -76,6 +76,7 @@ export class OrderService {
     }
 
     // Apply loyalty discount if customer is eligible
+    const totalAmount = products.reduce((acc, product) => acc + product.price, 0);
     const discountedAmount = await this.loyaltyService.calculateNextOrderAmount(
       customerId,
       totalAmount
