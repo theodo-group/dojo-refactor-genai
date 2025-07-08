@@ -2,13 +2,16 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import * as request from 'supertest';
 import { AppModule } from '../../src/app.module';
-import { GlobalFixtures } from '../fixtures/global-fixtures';
+import { TestDbUtils } from '../utils/test-db.utils';
+import { createProduct } from '../factories/product.factory';
 import { CreateProductDto } from '../../src/product/dto/create-product.dto';
 import { UpdateProductDto } from '../../src/product/dto/update-product.dto';
+import { Product } from '../../src/entities/product.entity';
 
 describe('ProductController (e2e)', () => {
   let app: INestApplication;
-  let fixtures: GlobalFixtures;
+  let testDbUtils: TestDbUtils;
+  let testProducts: Product[];
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -26,13 +29,22 @@ describe('ProductController (e2e)', () => {
     app.setGlobalPrefix('api');
     await app.init();
 
-    // Initialize fixtures
-    fixtures = new GlobalFixtures(app);
-    await fixtures.load();
+    // Initialize test utilities
+    testDbUtils = new TestDbUtils(app);
+    
+    // Create test data
+    const productsData = [
+      createProduct({ name: 'Margherita Pizza', description: 'Classic pizza with tomato sauce and mozzarella', price: 12.99, category: 'pizza' }),
+      createProduct({ name: 'Pepperoni Pizza', description: 'Pizza with tomato sauce, mozzarella, and pepperoni', price: 14.99, category: 'pizza' }),
+      createProduct({ name: 'Caesar Salad', description: 'Fresh salad with romaine lettuce, croutons, and Caesar dressing', price: 8.99, category: 'salad' }),
+      createProduct({ name: 'Garlic Bread', description: 'Toasted bread with garlic butter', price: 4.99, category: 'appetizer' }),
+      createProduct({ name: 'Tiramisu', description: 'Classic Italian dessert with coffee and mascarpone', price: 7.99, category: 'dessert' })
+    ];
+    testProducts = await testDbUtils.createMultipleProducts(productsData);
   });
 
   afterAll(async () => {
-    await fixtures.clear();
+    await testDbUtils.clear();
     await app.close();
   });
 
@@ -43,7 +55,7 @@ describe('ProductController (e2e)', () => {
         .expect(200)
         .expect((res) => {
           expect(Array.isArray(res.body)).toBe(true);
-          expect(res.body.length).toBe(fixtures.getProducts().length);
+          expect(res.body.length).toBe(testProducts.length);
           
           // Check if products data is correct
           const productNames = res.body.map(product => product.name);
@@ -69,7 +81,7 @@ describe('ProductController (e2e)', () => {
     });
 
     it('GET /:id should return product by id', () => {
-      const product = fixtures.getProducts()[0];
+      const product = testProducts[0];
       
       return request(app.getHttpServer())
         .get(`/api/products/${product.id}`)
@@ -103,7 +115,7 @@ describe('ProductController (e2e)', () => {
     });
 
     it('PATCH /:id should update a product', () => {
-      const product = fixtures.getProducts()[0];
+      const product = testProducts[0];
       const updateProductDto: UpdateProductDto = {
         name: 'Updated Product Name',
         price: 19.99,
@@ -123,7 +135,7 @@ describe('ProductController (e2e)', () => {
     });
 
     it('DELETE /:id should soft delete a product', () => {
-      const product = fixtures.getProducts()[1];
+      const product = testProducts[1];
       
       return request(app.getHttpServer())
         .delete(`/api/products/${product.id}`)
