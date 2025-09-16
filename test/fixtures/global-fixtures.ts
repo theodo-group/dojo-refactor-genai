@@ -181,4 +181,75 @@ export class GlobalFixtures {
     
     return await this.orderRepository.save(orders);
   }
+
+  public async createLoyalCustomer(): Promise<Customer> {
+      const loyalCustomer = this.customerRepository.create({
+          name: 'Loyal Customer',
+          email: 'loyal@customer.com',
+          phone: '456-123-7890',
+          address: '357 Main de la Street',
+      });
+      const savedLoyalCustomer = await this.customerRepository.save(loyalCustomer);
+    const products = await this.createProducts();
+      await this.createOrdersForLoyalCustomer(savedLoyalCustomer, products);
+
+      return savedLoyalCustomer;
+  }
+
+    private async createOrdersForLoyalCustomer(loyalCustomer: Customer, products: Product[]): Promise<Order[]> {
+      if(products.length < 5) {
+          throw new Error('not enough products');
+      }
+        // Create dates for the orders - to make first customer eligible for loyalty program
+        const now = new Date();
+        const tenDaysAgo = new Date(now);
+        tenDaysAgo.setDate(now.getDate() - 10);
+
+        const fifteenDaysAgo = new Date(now);
+        fifteenDaysAgo.setDate(now.getDate() - 15);
+
+        const twentyDaysAgo = new Date(now);
+        twentyDaysAgo.setDate(now.getDate() - 20);
+
+        const twentyFiveDaysAgo = new Date(now);
+        twentyFiveDaysAgo.setDate(now.getDate() - 25);
+
+        const orders = [
+            this.orderRepository.create({
+                customer: loyalCustomer,
+                products: [products[0], products[3]],
+                totalAmount: 17.98,
+                status: OrderStatus.DELIVERED,
+                notes: 'Extra cheese please',
+                createdAt: tenDaysAgo,
+                updatedAt: tenDaysAgo
+            }),
+            this.orderRepository.create({
+                customer: loyalCustomer,
+                products: [products[1], products[2], products[4]],
+                totalAmount: 31.97,
+                status: OrderStatus.PREPARING,
+                createdAt: fifteenDaysAgo,
+                updatedAt: fifteenDaysAgo
+            }),
+            this.orderRepository.create({
+                customer: loyalCustomer,
+                products: [products[0], products[2]],
+                totalAmount: 21.98,
+                status: OrderStatus.DELIVERED,
+                createdAt: twentyDaysAgo,
+                updatedAt: twentyDaysAgo
+            }),
+            this.orderRepository.create({
+                customer: loyalCustomer,
+                products: [products[4]],
+                totalAmount: 7.99,
+                status: OrderStatus.READY,
+                createdAt: twentyFiveDaysAgo,
+                updatedAt: twentyFiveDaysAgo
+            }),
+        ];
+
+        return await this.orderRepository.save(orders);
+    }
 }

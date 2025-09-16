@@ -27,6 +27,7 @@ export class LoyaltyService {
       .andWhere('order.createdAt >= :oneMonthAgo', { oneMonthAgo: oneMonthAgo.toISOString() })
       .getCount();
     const eligible = count > 3;
+
     const finalAmount = eligible ? totalAmount * (1 - this.DISCOUNT_RATE) : totalAmount;
     return parseFloat(finalAmount.toFixed(2));
   }
