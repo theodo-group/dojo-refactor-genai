@@ -7,14 +7,14 @@ import { Order, OrderStatus } from "../../src/entities/order.entity";
 
 export class GlobalFixtures {
   private app: INestApplication;
-  private customerRepository: Repository<Customer>;
-  private productRepository: Repository<Product>;
-  private orderRepository: Repository<Order>;
+  protected customerRepository: Repository<Customer>;
+  protected productRepository: Repository<Product>;
+  protected orderRepository: Repository<Order>;
 
   // Cached fixtures for reuse across tests
-  private customers: Customer[] = [];
-  private products: Product[] = [];
-  private orders: Order[] = [];
+  protected customers: Customer[] = [];
+  protected products: Product[] = [];
+  protected orders: Order[] = [];
 
   constructor(app: INestApplication) {
     this.app = app;
@@ -64,7 +64,7 @@ export class GlobalFixtures {
   }
 
   // Customer creation
-  private async createCustomers(): Promise<Customer[]> {
+  protected async createCustomers(): Promise<Customer[]> {
     const customers = [
       this.customerRepository.create({
         name: "John Doe",
@@ -90,7 +90,7 @@ export class GlobalFixtures {
   }
 
   // Product creation
-  private async createProducts(): Promise<Product[]> {
+  protected async createProducts(): Promise<Product[]> {
     const products = [
       this.productRepository.create({
         name: "Margherita Pizza",
@@ -129,7 +129,7 @@ export class GlobalFixtures {
   }
 
   // Order creation
-  private async createOrders(): Promise<Order[]> {
+  protected async createOrders(): Promise<Order[]> {
     // Create dates for the orders - to make first customer eligible for loyalty program
     const now = new Date();
     const tenDaysAgo = new Date(now);

@@ -1,70 +1,11 @@
-import { INestApplication } from "@nestjs/common";
-import { getRepositoryToken } from "@nestjs/typeorm";
-import { Repository } from "typeorm";
 import { Customer } from "../../src/entities/customer.entity";
 import { Product } from "../../src/entities/product.entity";
 import { Order, OrderStatus } from "../../src/entities/order.entity";
+import { GlobalFixtures } from "./global-fixtures";
 
-export class LoyaltyFixtures {
-  private app: INestApplication;
-  private customerRepository: Repository<Customer>;
-  private productRepository: Repository<Product>;
-  private orderRepository: Repository<Order>;
-
-  // Cached fixtures for reuse across tests
-  private customers: Customer[] = [];
-  private products: Product[] = [];
-  private orders: Order[] = [];
-
-  constructor(app: INestApplication) {
-    this.app = app;
-    this.customerRepository = app.get(getRepositoryToken(Customer));
-    this.productRepository = app.get(getRepositoryToken(Product));
-    this.orderRepository = app.get(getRepositoryToken(Order));
-  }
-
-  async load(): Promise<void> {
-    // Clear existing data first
-    await this.clear();
-
-    // Create customers
-    this.customers = await this.createCustomers();
-
-    // Create products
-    this.products = await this.createProducts();
-
-    // Create orders
-    this.orders = await this.createOrders();
-  }
-
-  async clear(): Promise<void> {
-    // Delete in the correct order to respect foreign key constraints
-    await this.orderRepository.query("TRUNCATE TABLE order_products CASCADE");
-    await this.orderRepository.query("TRUNCATE TABLE orders CASCADE");
-    await this.productRepository.query("TRUNCATE TABLE products CASCADE");
-    await this.customerRepository.query("TRUNCATE TABLE customers CASCADE");
-
-    // Reset cached data
-    this.customers = [];
-    this.products = [];
-    this.orders = [];
-  }
-
-  // Helper methods to access fixture data
-  getCustomers(): Customer[] {
-    return this.customers;
-  }
-
-  getProducts(): Product[] {
-    return this.products;
-  }
-
-  getOrders(): Order[] {
-    return this.orders;
-  }
-
+export class LoyaltyFixtures extends GlobalFixtures {
   // Customer creation
-  private async createCustomers(): Promise<Customer[]> {
+  protected async createCustomers(): Promise<Customer[]> {
     const customers = [
       this.customerRepository.create({
         name: "John Doe",
@@ -90,7 +31,7 @@ export class LoyaltyFixtures {
   }
 
   // Product creation
-  private async createProducts(): Promise<Product[]> {
+  protected async createProducts(): Promise<Product[]> {
     const products = [
       this.productRepository.create({
         name: "Margherita Pizza",
@@ -129,7 +70,7 @@ export class LoyaltyFixtures {
   }
 
   // Order creation
-  private async createOrders(): Promise<Order[]> {
+  protected async createOrders(): Promise<Order[]> {
     // Create dates for the orders - to make first customer eligible for loyalty program
     const now = new Date();
     const tenDaysAgo = new Date(now);
