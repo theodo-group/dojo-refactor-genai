@@ -5,11 +5,11 @@ import { AppModule } from "../../src/app.module";
 import { GlobalFixtures } from "../fixtures/global-fixtures";
 import { CreateOrderDto } from "../../src/order/dto/create-order.dto";
 import { OrderStatus } from "../../src/entities/order.entity";
-import { before } from "node:test";
+import { fixtures, ContextFromBuilder } from "../fixtures/typed-fixtures";
 
 describe("OrderController (e2e)", () => {
   let app: INestApplication;
-  let fixtures: GlobalFixtures;
+  let globalFixtures: GlobalFixtures;
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -28,36 +28,42 @@ describe("OrderController (e2e)", () => {
     await app.init();
 
     // Initialize fixtures
-    fixtures = new GlobalFixtures(app);
-    await fixtures.load();
+    globalFixtures = new GlobalFixtures(app);
+    await globalFixtures.load();
   });
 
   afterAll(async () => {
-    await fixtures.clear();
+    await globalFixtures.clear();
     await app.close();
   });
 
   describe("/api/orders", () => {
-    const scenario = fixtures()
-      .withCustomers(f => ({
+    const getBaseScenario = () => fixtures(app)
+      .withCustomers(() => ({
         johnDoe: { name: 'John Doe', email: 'john@example.com', phone: '123-456-7890', address: '123 Main St' }
       }))
-      .withProducts(f => ({
+      .withProducts(() => ({
         margheritaPizza: { name: 'Margherita Pizza', price: 12.99, category: 'pizza', description: 'Classic pizza with tomato sauce and mozzarella' },
         garlicBread: { name: 'Garlic Bread', price: 4.99, category: 'appetizer', description: 'Toasted bread with garlic butter' }
       }))
-      .withOrders(f => ({
-        testOrder: { customer: f.customer.johnDoe, products: [f.products.margheritaPizza, f.products.garlicBread], status: 'pending', totalAmount: 17.98, notes: 'Test order' }
+      .withOrders(() => ({
+        testOrder: { customer: 'johnDoe', products: ['margheritaPizza', 'garlicBread'], status: OrderStatus.PENDING, totalAmount: 17.98, notes: 'Test order' }
       }));
 
-    let context: Context<typeof scenario>;
+    let context: ContextFromBuilder<ReturnType<typeof getBaseScenario>>;
+    let currentScenario: any;
 
     beforeEach(async () => {
-      context = await scenario.create();
+      // Clear any existing data first
+      await globalFixtures.clear();
+      currentScenario = getBaseScenario();
+      context = await currentScenario.create();
     })
 
     afterEach(async () => {
-      await scenario.cleanup();
+      if (currentScenario) {
+        await currentScenario.cleanup();
+      }
     })
 
     it("GET / should return all orders", async () => {
@@ -113,9 +119,10 @@ describe("OrderController (e2e)", () => {
     });
 
     it("POST / should create a new order", async () => {
-      const emptyOrderContext = await scenario
-        .withOrders({})
-        .create();
+      const emptyOrderScenario = getBaseScenario()
+        .withOrders(() => ({}));
+      const emptyOrderContext = await emptyOrderScenario.create();
+      currentScenario = emptyOrderScenario;
 
       const createOrderDto: CreateOrderDto = {
         customerId: emptyOrderContext.customers.johnDoe.id,
@@ -138,11 +145,12 @@ describe("OrderController (e2e)", () => {
     });
 
     it("PATCH /:id/status should update order status", async () => {
-      const readyOrderContext = await scenario
-        .withOrders({
-          readyOrder: { customer: 'johnDoe', products: ['margheritaPizza'], status: 'ready', totalAmount: 12.99 }
-        })
-        .create();
+      const readyOrderScenario = getBaseScenario()
+        .withOrders(() => ({
+          readyOrder: { customer: 'johnDoe', products: ['margheritaPizza'], status: OrderStatus.READY, totalAmount: 12.99 }
+        }));
+      const readyOrderContext = await readyOrderScenario.create();
+      currentScenario = readyOrderScenario;
 
       const newStatus = OrderStatus.DELIVERED;
 
@@ -157,11 +165,12 @@ describe("OrderController (e2e)", () => {
     });
 
     it("PATCH /:id/status should prevent invalid status transitions", async () => {
-      const deliveredOrderContext = await scenario
-        .withOrders({
-          deliveredOrder: { customer: 'johnDoe', products: ['margheritaPizza'], status: 'delivered', totalAmount: 12.99 }
-        })
-        .create();
+      const deliveredOrderScenario = getBaseScenario()
+        .withOrders(() => ({
+          deliveredOrder: { customer: 'johnDoe', products: ['margheritaPizza'], status: OrderStatus.DELIVERED, totalAmount: 12.99 }
+        }));
+      const deliveredOrderContext = await deliveredOrderScenario.create();
+      currentScenario = deliveredOrderScenario;
 
       const newStatus = OrderStatus.PREPARING;
 
@@ -172,11 +181,12 @@ describe("OrderController (e2e)", () => {
     });
 
     it("DELETE /:id should cancel an order", async () => {
-      const preparingOrderContext = await scenario
-        .withOrders({
-          preparingOrder: { customer: 'johnDoe', products: ['margheritaPizza'], status: 'preparing', totalAmount: 12.99 }
-        })
-        .create();
+      const preparingOrderScenario = getBaseScenario()
+        .withOrders(() => ({
+          preparingOrder: { customer: 'johnDoe', products: ['margheritaPizza'], status: OrderStatus.PREPARING, totalAmount: 12.99 }
+        }));
+      const preparingOrderContext = await preparingOrderScenario.create();
+      currentScenario = preparingOrderScenario;
 
       return request(app.getHttpServer())
         .delete(`/api/orders/${preparingOrderContext.orders.preparingOrder.id}`)
