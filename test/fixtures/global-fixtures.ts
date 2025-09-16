@@ -23,20 +23,6 @@ export class GlobalFixtures {
     this.orderRepository = app.get(getRepositoryToken(Order));
   }
 
-  async load(): Promise<void> {
-    // Clear existing data first
-    await this.clear();
-
-    // Create customers
-    this.customers = await this.createCustomers();
-    
-    // Create products
-    this.products = await this.createProducts();
-    
-    // Create orders
-    this.orders = await this.createOrders();
-  }
-
   async clear(): Promise<void> {
     // Delete in the correct order to respect foreign key constraints
     await this.orderRepository.query('TRUNCATE TABLE order_products CASCADE');
@@ -51,15 +37,18 @@ export class GlobalFixtures {
   }
 
   // Helper methods to access fixture data
-  getCustomers(): Customer[] {
+  async getCustomers(): Promise<Customer[]> {
+    this.customers = await this.createCustomers();
     return this.customers;
   }
 
-  getProducts(): Product[] {
+  async getProducts(): Promise<Product[]> {
+    this.products = await this.createProducts();
     return this.products;
   }
 
-  getOrders(): Order[] {
+  async getOrders(): Promise<Order[]> {
+    this.orders = await this.createOrders();
     return this.orders;
   }
 

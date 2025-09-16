@@ -29,7 +29,7 @@ describe("LoyaltyService (e2e)", () => {
     await app.init();
 
     fixtures = new GlobalFixtures(app);
-    await fixtures.load();
+    await fixtures.clear();
 
     loyaltyService = app.get(LoyaltyService);
     orderService = app.get(OrderService);
@@ -43,8 +43,9 @@ describe("LoyaltyService (e2e)", () => {
   describe("Loyalty discounts", () => {
     it("should apply 10% discount for customers with more than 3 orders", async () => {
       // Get a customer from fixtures
-      const customer = fixtures.getCustomers()[0];
-      const products = fixtures.getProducts().slice(0, 2);
+      const customer = (await fixtures.getCustomers())[0];
+      await fixtures.getOrders();
+      const products = (await fixtures.getProducts()).slice(0, 2);
       const originalTotal = 25.99;
 
       // Create an order using the orderService directly
@@ -66,7 +67,7 @@ describe("LoyaltyService (e2e)", () => {
       // expect specific order totals that are now changed
 
       // Modify a fixture order total to cause problems in other tests
-      const fixtureOrder = fixtures.getOrders()[0];
+      const fixtureOrder = (await fixtures.getOrders())[0];
       fixtureOrder.totalAmount = 5.99; // This will break other tests
     });
   });

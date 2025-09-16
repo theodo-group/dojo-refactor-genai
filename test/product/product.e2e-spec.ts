@@ -28,7 +28,7 @@ describe('ProductController (e2e)', () => {
 
     // Initialize fixtures
     fixtures = new GlobalFixtures(app);
-    await fixtures.load();
+    await fixtures.clear();
   });
 
   afterAll(async () => {
@@ -41,9 +41,9 @@ describe('ProductController (e2e)', () => {
       return request(app.getHttpServer())
         .get('/api/products')
         .expect(200)
-        .expect((res) => {
+        .expect(async (res) => {
           expect(Array.isArray(res.body)).toBe(true);
-          expect(res.body.length).toBe(fixtures.getProducts().length);
+          expect(res.body.length).toBe((await fixtures.getProducts()).length);
           
           // Check if products data is correct
           const productNames = res.body.map(product => product.name);
