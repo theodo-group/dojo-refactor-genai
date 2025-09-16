@@ -189,7 +189,7 @@ describe("CustomerController (e2e)", () => {
         });
     });
 
-    it("POST / should validate email format", () => {
+    it("POST / should validate email format", async () => {
       const invalidEmailFormats = [
         "notanemail",
         "@domain.com",
@@ -199,18 +199,16 @@ describe("CustomerController (e2e)", () => {
         "user@domain..com",
       ];
 
-      const promises = invalidEmailFormats.map((email) =>
-        request(app.getHttpServer())
+      for (const email of invalidEmailFormats) {
+        await request(app.getHttpServer())
           .post("/api/customers")
           .send({
             name: "Test User",
-            email: email,
+            email,
             phone: "123-456-7890",
           })
-          .expect(400)
-      );
-
-      return Promise.all(promises);
+          .expect(400);
+      }
     });
 
     it("POST / should validate required fields", () => {

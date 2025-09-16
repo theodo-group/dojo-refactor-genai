@@ -256,7 +256,7 @@ describe("ProductController (e2e)", () => {
         });
     });
 
-    it("POST / should validate required fields", () => {
+    it("POST / should validate required fields", async () => {
       const testCases = [
         { description: "Missing name", price: 10.99, category: "test" },
         { name: "Test Product", category: "test" }, // Missing price
@@ -264,14 +264,12 @@ describe("ProductController (e2e)", () => {
         {}, // Missing everything
       ];
 
-      const promises = testCases.map((data) =>
-        request(app.getHttpServer())
+      for (const data of testCases) {
+        await request(app.getHttpServer())
           .post("/api/products")
           .send(data)
-          .expect(400)
-      );
-
-      return Promise.all(promises);
+          .expect(400);
+      }
     });
 
     it("PATCH /:id should validate price updates", () => {
