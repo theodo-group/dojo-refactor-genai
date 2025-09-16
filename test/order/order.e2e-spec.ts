@@ -95,7 +95,7 @@ describe("OrderController (e2e)", () => {
     });
 
     it("POST / should create a new order", () => {
-      const customer = fixtures.getCustomers()[0];
+      const customer = fixtures.getCustomers()[1];
       const products = fixtures.getProducts().slice(0, 2);
 
       const createOrderDto: CreateOrderDto = {
