@@ -134,12 +134,14 @@ describe("OrderController (e2e)", () => {
 
   describe("/api/orders", () => {
     it("GET / should return all orders", () => {
+      const expectedOrdersCount = Object.keys(fixtures.orders).length;
+
       return request(app.getHttpServer())
         .get("/api/orders")
         .expect(200)
         .expect((res) => {
           expect(Array.isArray(res.body)).toBe(true);
-          expect(res.body.length).toBe(fixtures.getOrders().length);
+          expect(res.body.length).toBe(expectedOrdersCount);
 
           // Check if each order has customer and products
           res.body.forEach((order) => {
@@ -163,7 +165,7 @@ describe("OrderController (e2e)", () => {
     });
 
     it("GET /:id should return order by id", () => {
-      const order = fixtures.getOrders()[0];
+      const order = fixtures.orders.johnOrder1;
 
       return request(app.getHttpServer())
         .get(`/api/orders/${order.id}`)
@@ -172,18 +174,21 @@ describe("OrderController (e2e)", () => {
           expect(res.body.id).toBe(order.id);
           expect(res.body.status).toBe(order.status);
           expect(res.body.customer.id).toBe(order.customer.id);
+          expect(res.body.notes).toBe('Extra cheese please');
           expect(Array.isArray(res.body.products)).toBe(true);
+          expect(res.body.products).toHaveLength(2);
         });
     });
 
     it("GET /customer/:customerId should return orders for a customer", () => {
-      const customer = fixtures.getCustomers()[0];
+      const customer = fixtures.customers.john;
 
       return request(app.getHttpServer())
         .get(`/api/orders/customer/${customer.id}`)
         .expect(200)
         .expect((res) => {
           expect(Array.isArray(res.body)).toBe(true);
+          expect(res.body).toHaveLength(4); // John has 4 orders
           res.body.forEach((order) => {
             expect(order.customer.id).toBe(customer.id);
           });
@@ -191,14 +196,14 @@ describe("OrderController (e2e)", () => {
     });
 
     it("POST / should create a new order", () => {
-      const customer = fixtures.getCustomers()[0];
-      const products = fixtures.getProducts().slice(0, 2);
+      const customer = fixtures.customers.jane;
+      const products = [fixtures.products.margherita, fixtures.products.caesarSalad];
 
       const createOrderDto: CreateOrderDto = {
         customerId: customer.id,
         productIds: products.map((p) => p.id),
-        totalAmount: 30.5,
-        notes: "Test order notes",
+        totalAmount: 21.98,
+        notes: "Test order for Jane",
       };
 
       return request(app.getHttpServer())
@@ -210,14 +215,13 @@ describe("OrderController (e2e)", () => {
           expect(res.body.totalAmount).toBe(createOrderDto.totalAmount);
           expect(res.body.notes).toBe(createOrderDto.notes);
           expect(res.body.customer.id).toBe(customer.id);
+          expect(res.body.customer.name).toBe('Jane Smith');
           expect(res.body.products.length).toBe(products.length);
         });
     });
 
     it("PATCH /:id/status should update order status", () => {
-      const order = fixtures
-        .getOrders()
-        .find((o) => o.status === OrderStatus.READY);
+      const order = fixtures.orders.johnOrder4; // This one has READY status
       const newStatus = OrderStatus.DELIVERED;
 
       return request(app.getHttpServer())
@@ -231,9 +235,7 @@ describe("OrderController (e2e)", () => {
     });
 
     it("PATCH /:id/status should prevent invalid status transitions", () => {
-      const order = fixtures
-        .getOrders()
-        .find((o) => o.status === OrderStatus.DELIVERED);
+      const order = fixtures.orders.johnOrder1; // This one has DELIVERED status
       const newStatus = OrderStatus.PREPARING;
 
       return request(app.getHttpServer())
@@ -243,13 +245,7 @@ describe("OrderController (e2e)", () => {
     });
 
     it("DELETE /:id should cancel an order", () => {
-      const order = fixtures
-        .getOrders()
-        .find(
-          (o) =>
-            o.status === OrderStatus.PENDING ||
-            o.status === OrderStatus.PREPARING
-        );
+      const order = fixtures.orders.johnOrder2; // This one has PREPARING status
 
       return request(app.getHttpServer())
         .delete(`/api/orders/${order.id}`)
@@ -263,6 +259,29 @@ describe("OrderController (e2e)", () => {
               expect(res.body.status).toBe(OrderStatus.CANCELLED);
             });
         });
+    });
+
+    it("should handle complex scenario with multiple customers and orders", () => {
+      // Test accessing different customers and their data
+      const john = fixtures.customers.john;
+      const jane = fixtures.customers.jane;
+      const bob = fixtures.customers.bob;
+
+      expect(john.name).toBe('John Doe');
+      expect(jane.email).toBe('jane@example.com');
+      expect(bob.address).toBe('789 Pine Rd');
+
+      // Test product access
+      const pizza = fixtures.products.margherita;
+      const dessert = fixtures.products.tiramisu;
+
+      expect(pizza.price).toBe(12.99);
+      expect(dessert.category).toBe('dessert');
+
+      // Test order relationships
+      const johnOrder = fixtures.orders.johnOrder1;
+      expect(johnOrder.customer.id).toBe(john.id);
+      expect(johnOrder.totalAmount).toBe(17.98);
     });
   });
 });
