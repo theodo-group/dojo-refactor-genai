@@ -5,7 +5,7 @@ import { Customer } from "../../src/entities/customer.entity";
 import { Product } from "../../src/entities/product.entity";
 import { Order, OrderStatus } from "../../src/entities/order.entity";
 
-export class GlobalFixtures {
+export class LoyaltyFixtures {
   private app: INestApplication;
   private customerRepository: Repository<Customer>;
   private productRepository: Repository<Product>;
