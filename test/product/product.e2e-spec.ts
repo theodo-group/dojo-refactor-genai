@@ -2,13 +2,15 @@ import { Test, TestingModule } from "@nestjs/testing";
 import { INestApplication, ValidationPipe } from "@nestjs/common";
 import * as request from "supertest";
 import { AppModule } from "../../src/app.module";
-import { GlobalFixtures } from "../fixtures/global-fixtures";
+import { TestDataManager } from "../fixtures/base/test-data-manager";
+import { ScenarioFixtures } from "../fixtures/scenarios/scenario-fixtures";
 import { CreateProductDto } from "../../src/product/dto/create-product.dto";
 import { UpdateProductDto } from "../../src/product/dto/update-product.dto";
 
 describe("ProductController (e2e)", () => {
   let app: INestApplication;
-  let fixtures: GlobalFixtures;
+  let dataManager: TestDataManager;
+  let scenarios: ScenarioFixtures;
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -26,14 +28,14 @@ describe("ProductController (e2e)", () => {
     app.setGlobalPrefix("api");
     await app.init();
 
-    // Initialize fixtures
-    fixtures = new GlobalFixtures(app);
-    await fixtures.load();
+    dataManager = new TestDataManager(app);
+    scenarios = new ScenarioFixtures(app);
+    await dataManager.setup();
   });
 
   afterAll(async () => {
-    if (fixtures) {
-      await fixtures.clear();
+    if (dataManager) {
+      await dataManager.teardown();
     }
     if (app) {
       await app.close();
@@ -41,22 +43,29 @@ describe("ProductController (e2e)", () => {
   });
 
   describe("/api/products", () => {
-    it("GET / should return all available products", () => {
+    it("GET / should return all available products", async () => {
+      // GIVEN: Various products in different categories
+      const menuProducts = await scenarios.setupBasicMenuScenario();
+
       return request(app.getHttpServer())
         .get("/api/products")
         .expect(200)
         .expect((res) => {
           expect(Array.isArray(res.body)).toBe(true);
-          expect(res.body.length).toBeGreaterThanOrEqual(5); // At least the original 5 products
+          expect(res.body.length).toBeGreaterThan(0);
 
-          // Check if products data is correct
+          // Check if our created products are present
           const productNames = res.body.map((product) => product.name);
           expect(productNames).toContain("Margherita Pizza");
           expect(productNames).toContain("Caesar Salad");
         });
     });
 
-    it("GET /?category=pizza should filter products by category", () => {
+    it("GET /?category=pizza should filter products by category", async () => {
+      // GIVEN: Products in pizza category
+      await dataManager.productFactory.createMargheritaPizza();
+      await dataManager.productFactory.createPepperoniPizza();
+
       return request(app.getHttpServer())
         .get("/api/products?category=pizza")
         .expect(200)
@@ -72,8 +81,12 @@ describe("ProductController (e2e)", () => {
         });
     });
 
-    it("GET /:id should return product by id", () => {
-      const product = fixtures.getProducts()[0];
+    it("GET /:id should return product by id", async () => {
+      // GIVEN: A specific product exists in the system
+      const product = await dataManager.productFactory.createMargheritaPizza({
+        name: "Test Pizza Product",
+        price: 15.99,
+      });
 
       return request(app.getHttpServer())
         .get(`/api/products/${product.id}`)
@@ -106,8 +119,15 @@ describe("ProductController (e2e)", () => {
         });
     });
 
-    it("PATCH /:id should update a product", () => {
-      const product = fixtures.getProducts()[0];
+    it("PATCH /:id should update a product", async () => {
+      // GIVEN: A product that can be updated
+      const product = await dataManager.productFactory.createMargheritaPizza({
+        name: "Original Product Name",
+        price: 12.99,
+        description: "Original description",
+      });
+
+      // WHEN: Updating specific product fields
       const updateProductDto: UpdateProductDto = {
         name: "Updated Product Name",
         price: 19.99,
@@ -126,14 +146,20 @@ describe("ProductController (e2e)", () => {
         });
     });
 
-    it("DELETE /:id should soft delete a product", () => {
-      const product = fixtures.getDeletableProducts()[0]; // Use product specifically not in orders
+    it("DELETE /:id should soft delete a product", async () => {
+      // GIVEN: A product that can be safely deleted (not in any orders)
+      const product = await dataManager.productFactory.build({
+        name: "Deletable Test Product",
+        description: "Product that can be safely deleted",
+        price: 9.99,
+        category: "test",
+      });
 
       return request(app.getHttpServer())
         .delete(`/api/products/${product.id}`)
         .expect(204)
         .then(() => {
-          // Verify product is no longer in the available list
+          // THEN: Product is no longer in the available list
           return request(app.getHttpServer())
             .get("/api/products")
             .expect(200)
@@ -162,7 +188,15 @@ describe("ProductController (e2e)", () => {
         });
     });
 
-    it("GET /?available=false should return unavailable products", () => {
+    it("GET /?available=false should return unavailable products", async () => {
+      // GIVEN: Some unavailable products in the system
+      await dataManager.productFactory.createUnavailableProduct({
+        name: "Seasonal Special",
+        description: "Limited time offer - currently unavailable",
+        price: 15.99,
+        category: "special",
+      });
+
       return request(app.getHttpServer())
         .get("/api/products?available=false")
         .expect(200)
@@ -256,9 +290,13 @@ describe("ProductController (e2e)", () => {
         });
     });
 
-    it("PATCH /:id should validate price updates", () => {
-      const product = fixtures.getProducts()[0];
+    it("PATCH /:id should validate price updates", async () => {
+      // GIVEN: A product that will be used for price validation testing
+      const product = await dataManager.productFactory.createMargheritaPizza({
+        name: "Price Validation Test Product",
+      });
 
+      // WHEN: Attempting invalid price updates
       const invalidUpdates = [
         { price: -10 }, // Negative price
         { price: 0 }, // Zero price
@@ -275,9 +313,16 @@ describe("ProductController (e2e)", () => {
       return Promise.all(promises);
     });
 
-    it("PATCH /:id should handle category changes", () => {
-      const product = fixtures.getUpdateTestProducts()[1]; // Use specific update test product
+    it("PATCH /:id should handle category changes", async () => {
+      // GIVEN: A product designed for category update testing
+      const product = await dataManager.productFactory.build({
+        name: "Category Change Test Product",
+        description: "Product used for testing category changes",
+        price: 10.99,
+        category: "original-category",
+      });
 
+      // WHEN: Changing only the category
       return request(app.getHttpServer())
         .patch(`/api/products/${product.id}`)
         .send({ category: "updated-category" })
@@ -302,9 +347,11 @@ describe("ProductController (e2e)", () => {
     });
 
     it("DELETE /:id should prevent deletion of products in active orders", async () => {
-      // Use a product that's specifically in an active order
-      const productInOrder = fixtures.getProductsInActiveOrders()[0]; // Pepperoni Pizza in PREPARING order
+      // GIVEN: A product that is in an active order (should not be deletable)
+      const productsCrudScenario = await scenarios.setupProductCrudScenario();
+      const productInOrder = productsCrudScenario.productsInActiveOrders[0];
 
+      // WHEN: Attempting to delete a product that is in active orders
       return request(app.getHttpServer())
         .delete(`/api/products/${productInOrder.id}`)
         .expect(409) // Should prevent deletion
@@ -328,9 +375,14 @@ describe("ProductController (e2e)", () => {
         });
     });
 
-    it("PATCH /:id should update product availability", () => {
-      const product = fixtures.getProducts()[0];
+    it("PATCH /:id should update product availability", async () => {
+      // GIVEN: A product that is initially available
+      const product = await dataManager.productFactory.createMargheritaPizza({
+        name: "Availability Test Product",
+        isAvailable: true,
+      });
 
+      // WHEN: Making the product unavailable
       return request(app.getHttpServer())
         .patch(`/api/products/${product.id}`)
         .send({ isAvailable: false })
@@ -339,7 +391,7 @@ describe("ProductController (e2e)", () => {
           expect(res.body.isAvailable).toBe(false);
         })
         .then(() => {
-          // Verify it doesn't appear in available products
+          // THEN: Product doesn't appear in available products list
           return request(app.getHttpServer())
             .get("/api/products")
             .expect(200)
@@ -395,11 +447,19 @@ describe("ProductController (e2e)", () => {
       });
     });
 
-    it("PATCH /:id should handle partial updates without affecting other fields", () => {
-      const product = fixtures.getUpdateTestProducts()[0]; // Use specific update test product
+    it("PATCH /:id should handle partial updates without affecting other fields", async () => {
+      // GIVEN: A product with specific initial data
+      const product = await dataManager.productFactory.build({
+        name: "Partial Update Test Pizza",
+        description: "Pizza used for testing partial updates",
+        price: 13.99,
+        category: "pizza",
+      });
+
       const originalName = product.name;
       const originalCategory = product.category;
 
+      // WHEN: Updating only the description field
       return request(app.getHttpServer())
         .patch(`/api/products/${product.id}`)
         .send({ description: "Updated description only" })
@@ -412,14 +472,20 @@ describe("ProductController (e2e)", () => {
     });
 
     it("GET /:id should return 404 for soft-deleted products", async () => {
-      const product = fixtures.getDeletableProducts()[2]; // Use different deletable product
+      // GIVEN: A product that will be soft deleted
+      const product = await dataManager.productFactory.build({
+        name: "Soft Delete Test Product",
+        description: "Product used for soft delete testing",
+        price: 6.99,
+        category: "test",
+      });
 
-      // Soft delete the product
+      // WHEN: Soft deleting the product
       await request(app.getHttpServer())
         .delete(`/api/products/${product.id}`)
         .expect(204);
 
-      // Should return 404 when trying to access
+      // THEN: Should return 404 when trying to access
       return request(app.getHttpServer())
         .get(`/api/products/${product.id}`)
         .expect(404);

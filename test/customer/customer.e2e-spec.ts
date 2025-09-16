@@ -2,13 +2,15 @@ import { Test, TestingModule } from "@nestjs/testing";
 import { INestApplication, ValidationPipe } from "@nestjs/common";
 import * as request from "supertest";
 import { AppModule } from "../../src/app.module";
-import { GlobalFixtures } from "../fixtures/global-fixtures";
+import { TestDataManager } from "../fixtures/base/test-data-manager";
+import { ScenarioFixtures } from "../fixtures/scenarios/scenario-fixtures";
 import { CreateCustomerDto } from "../../src/customer/dto/create-customer.dto";
 import { UpdateCustomerDto } from "../../src/customer/dto/update-customer.dto";
 
 describe("CustomerController (e2e)", () => {
   let app: INestApplication;
-  let fixtures: GlobalFixtures;
+  let dataManager: TestDataManager;
+  let scenarios: ScenarioFixtures;
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -26,14 +28,14 @@ describe("CustomerController (e2e)", () => {
     app.setGlobalPrefix("api");
     await app.init();
 
-    // Initialize fixtures
-    fixtures = new GlobalFixtures(app);
-    await fixtures.load();
+    dataManager = new TestDataManager(app);
+    scenarios = new ScenarioFixtures(app);
+    await dataManager.setup();
   });
 
   afterAll(async () => {
-    if (fixtures) {
-      await fixtures.clear();
+    if (dataManager) {
+      await dataManager.teardown();
     }
     if (app) {
       await app.close();
@@ -41,24 +43,33 @@ describe("CustomerController (e2e)", () => {
   });
 
   describe("/api/customers", () => {
-    it("GET / should return all active customers", () => {
+    it("GET / should return all active customers", async () => {
+      // GIVEN: Multiple active customers in the system
+      const activeCustomers = await dataManager.customerFactory.buildMany(3, {
+        name: "Active Customer",
+      });
+
       return request(app.getHttpServer())
         .get("/api/customers")
         .expect(200)
         .expect((res) => {
           expect(Array.isArray(res.body)).toBe(true);
-          expect(res.body.length).toBe(fixtures.getCustomers().length);
+          expect(res.body.length).toBeGreaterThanOrEqual(activeCustomers.length);
 
-          // Check if all customers are returned
+          // Check if our created customers are returned
           const emails = res.body.map((customer) => customer.email);
-          expect(emails).toContain("john@example.com");
-          expect(emails).toContain("jane@example.com");
-          expect(emails).toContain("bob@example.com");
+          activeCustomers.forEach(customer => {
+            expect(emails).toContain(customer.email);
+          });
         });
     });
 
-    it("GET /:id should return customer by id", () => {
-      const customer = fixtures.getCustomers()[0];
+    it("GET /:id should return customer by id", async () => {
+      // GIVEN: A specific customer exists in the system
+      const customer = await dataManager.customerFactory.createBasicCustomer({
+        name: "Test Customer",
+        email: "test.get@example.com",
+      });
 
       return request(app.getHttpServer())
         .get(`/api/customers/${customer.id}`)
@@ -109,8 +120,15 @@ describe("CustomerController (e2e)", () => {
         .expect(400);
     });
 
-    it("PATCH /:id should update a customer", () => {
-      const customer = fixtures.getUpdateTestCustomers()[0]; // Use specific update test customer
+    it("PATCH /:id should update a customer", async () => {
+      // GIVEN: A customer that can be safely updated
+      const customer = await dataManager.customerFactory.createTestCustomerForUpdates({
+        name: "Original Name",
+        email: "update.test@example.com",
+        phone: "original-phone",
+      });
+
+      // WHEN: Updating specific customer fields
       const updateCustomerDto: UpdateCustomerDto = {
         name: "Updated Name",
         phone: "updated-phone",
@@ -129,14 +147,18 @@ describe("CustomerController (e2e)", () => {
         });
     });
 
-    it("DELETE /:id should soft delete a customer", () => {
-      const customer = fixtures.getUpdateTestCustomers()[2]; // Use specific delete test customer
+    it("DELETE /:id should soft delete a customer", async () => {
+      // GIVEN: A customer that can be safely deleted
+      const customer = await dataManager.customerFactory.createTestCustomerForDeletion({
+        name: "Delete Test Customer",
+        email: "delete.safe@example.com",
+      });
 
       return request(app.getHttpServer())
         .delete(`/api/customers/${customer.id}`)
         .expect(204)
         .then(() => {
-          // Verify customer is no longer in the active list
+          // THEN: Customer is no longer in the active list
           return request(app.getHttpServer())
             .get("/api/customers")
             .expect(200)
@@ -148,8 +170,14 @@ describe("CustomerController (e2e)", () => {
     });
 
     // NEW COMPREHENSIVE TESTS
-    it("POST / should reject duplicate email addresses", () => {
-      const existingCustomer = fixtures.getCustomers()[0];
+    it("POST / should reject duplicate email addresses", async () => {
+      // GIVEN: An existing customer in the system
+      const existingCustomer = await dataManager.customerFactory.createBasicCustomer({
+        name: "Existing Customer",
+        email: "existing.unique@example.com",
+      });
+
+      // WHEN: Trying to create another customer with the same email
       const duplicateEmailDto: CreateCustomerDto = {
         name: "Duplicate Test",
         email: existingCustomer.email, // Using existing email
@@ -166,7 +194,21 @@ describe("CustomerController (e2e)", () => {
         });
     });
 
-    it("GET /?include_orders=true should return customers with order history", () => {
+    it("GET /?include_orders=true should return customers with order history", async () => {
+      // GIVEN: A customer with order history
+      const customer = await dataManager.customerFactory.createBasicCustomer({
+        name: "Customer With Orders",
+        email: "with.orders@example.com",
+      });
+
+      const product = await dataManager.productFactory.createMargheritaPizza();
+
+      await dataManager.orderFactory.createDeliveredOrder({
+        customer,
+        products: [product],
+        notes: "Test order for inclusion",
+      });
+
       return request(app.getHttpServer())
         .get("/api/customers?include_orders=true")
         .expect(200)
@@ -180,9 +222,10 @@ describe("CustomerController (e2e)", () => {
             expect(Array.isArray(customer.orders)).toBe(true);
           });
 
-          // Find a customer with orders and verify structure
-          const customerWithOrders = res.body.find((c) => c.orders.length > 0);
+          // Find our customer with orders and verify structure
+          const customerWithOrders = res.body.find((c) => c.id === customer.id);
           expect(customerWithOrders).toBeDefined();
+          expect(customerWithOrders.orders.length).toBeGreaterThan(0);
           expect(customerWithOrders.orders[0]).toHaveProperty("id");
           expect(customerWithOrders.orders[0]).toHaveProperty("totalAmount");
           expect(customerWithOrders.orders[0]).toHaveProperty("status");
@@ -222,10 +265,19 @@ describe("CustomerController (e2e)", () => {
         .expect(400); // Should reject due to length constraints
     });
 
-    it("PATCH /:id should prevent email updates to existing emails", () => {
-      const customer1 = fixtures.getCustomers()[0];
-      const customer2 = fixtures.getCustomers()[1];
+    it("PATCH /:id should prevent email updates to existing emails", async () => {
+      // GIVEN: Two different customers with unique emails
+      const customer1 = await dataManager.customerFactory.createBasicCustomer({
+        name: "Customer One",
+        email: "customer1.patch@example.com",
+      });
 
+      const customer2 = await dataManager.customerFactory.createBasicCustomer({
+        name: "Customer Two",
+        email: "customer2.patch@example.com",
+      });
+
+      // WHEN: Trying to update customer1's email to customer2's email
       return request(app.getHttpServer())
         .patch(`/api/customers/${customer1.id}`)
         .send({ email: customer2.email })
@@ -235,11 +287,18 @@ describe("CustomerController (e2e)", () => {
         });
     });
 
-    it("PATCH /:id should allow partial updates", () => {
-      const customer = fixtures.getPartialUpdateTestCustomer(); // Use specific customer for partial updates
+    it("PATCH /:id should allow partial updates", async () => {
+      // GIVEN: A customer with specific initial data
+      const customer = await dataManager.customerFactory.createBasicCustomer({
+        name: "Partial Update Customer",
+        email: "partial.update@example.com",
+        phone: "original-phone",
+      });
+
       const originalEmail = customer.email;
       const originalName = customer.name;
 
+      // WHEN: Updating only the phone field
       return request(app.getHttpServer())
         .patch(`/api/customers/${customer.id}`)
         .send({ phone: "updated-phone-only" })
@@ -292,14 +351,18 @@ describe("CustomerController (e2e)", () => {
     });
 
     it("DELETE /:id should not permanently delete customer data", async () => {
-      const customer = fixtures.getCustomers()[2];
+      // GIVEN: A customer that will be soft deleted
+      const customer = await dataManager.customerFactory.createTestCustomerForDeletion({
+        name: "Soft Delete Test",
+        email: "soft.delete.test@example.com",
+      });
 
-      // Soft delete the customer
+      // WHEN: Soft deleting the customer
       await request(app.getHttpServer())
         .delete(`/api/customers/${customer.id}`)
         .expect(204);
 
-      // Customer should not appear in active list
+      // THEN: Customer should not appear in active list
       const activeCustomers = await request(app.getHttpServer())
         .get("/api/customers")
         .expect(200);
@@ -309,7 +372,7 @@ describe("CustomerController (e2e)", () => {
       );
       expect(foundActive).toBeUndefined();
 
-      // But should still exist in database (check by trying to recreate with same email)
+      // BUT: Should still exist in database (check by trying to recreate with same email)
       await request(app.getHttpServer())
         .post("/api/customers")
         .send({
@@ -320,17 +383,24 @@ describe("CustomerController (e2e)", () => {
     });
 
     it("PATCH /:id should update customer timestamps", async () => {
-      const customer = fixtures.getCustomers()[0];
+      // GIVEN: A customer with a known creation timestamp
+      const customer = await dataManager.customerFactory.createBasicCustomer({
+        name: "Timestamp Test Customer",
+        email: "timestamp.test@example.com",
+      });
+
       const originalUpdatedAt = customer.updatedAt;
 
       // Wait a bit to ensure timestamp difference
       await new Promise((resolve) => setTimeout(resolve, 100));
 
+      // WHEN: Updating the customer
       const response = await request(app.getHttpServer())
         .patch(`/api/customers/${customer.id}`)
         .send({ phone: "timestamp-test-phone" })
         .expect(200);
 
+      // THEN: Updated timestamp should be newer
       expect(new Date(response.body.updatedAt).getTime()).toBeGreaterThan(
         new Date(originalUpdatedAt).getTime()
       );
@@ -396,14 +466,20 @@ describe("CustomerController (e2e)", () => {
     });
 
     it("should handle customer reactivation after soft delete", async () => {
-      const customer = fixtures.getCustomers()[3];
+      // GIVEN: A customer that will be soft deleted and potentially reactivated
+      const customer = await dataManager.customerFactory.createBasicCustomer({
+        name: "Reactivation Test Customer",
+        email: "reactivation.test@example.com",
+        phone: "555-REACT-01",
+        address: "123 Reactivation St",
+      });
 
-      // Soft delete
+      // WHEN: Soft deleting the customer
       await request(app.getHttpServer())
         .delete(`/api/customers/${customer.id}`)
         .expect(204);
 
-      // Try to create customer with same email (should allow reactivation)
+      // AND THEN: Try to create customer with same email (should allow reactivation)
       const reactivationResponse = await request(app.getHttpServer())
         .post("/api/customers")
         .send({

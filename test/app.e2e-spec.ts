@@ -2,11 +2,11 @@ import { Test, TestingModule } from "@nestjs/testing";
 import { INestApplication, ValidationPipe } from "@nestjs/common";
 import * as request from "supertest";
 import { AppModule } from "./../src/app.module";
-import { GlobalFixtures } from "./fixtures/global-fixtures";
+import { TestDataManager } from "./fixtures/base/test-data-manager";
 
 describe("AppController (e2e)", () => {
   let app: INestApplication;
-  let fixtures: GlobalFixtures;
+  let dataManager: TestDataManager;
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -24,14 +24,13 @@ describe("AppController (e2e)", () => {
     app.setGlobalPrefix("api");
     await app.init();
 
-    // Initialize fixtures
-    fixtures = new GlobalFixtures(app);
-    await fixtures.load();
+    dataManager = new TestDataManager(app);
+    await dataManager.setup();
   });
 
   afterAll(async () => {
-    if (fixtures) {
-      await fixtures.clear();
+    if (dataManager) {
+      await dataManager.teardown();
     }
     if (app) {
       await app.close();
@@ -93,9 +92,13 @@ describe("AppController (e2e)", () => {
 
   describe("API Performance & Load Tests", () => {
     it("should maintain data consistency under concurrent modifications", async () => {
-      const customer = fixtures.getUpdateTestCustomers()[1]; // Use specific customer for concurrent tests
+      // GIVEN: A customer for concurrent modification testing
+      const customer = await dataManager.customerFactory.createTestCustomerForUpdates({
+        name: "Concurrent Test Customer",
+        email: "concurrent.app@example.com",
+      });
 
-      // Create multiple concurrent update requests
+      // WHEN: Creating multiple concurrent update requests
       const updates = Array.from({ length: 5 }, (_, i) =>
         request(app.getHttpServer())
           .patch(`/api/customers/${customer.id}`)
@@ -105,10 +108,10 @@ describe("AppController (e2e)", () => {
 
       const results = await Promise.all(updates);
 
-      // At least one should succeed
+      // THEN: At least one should succeed
       expect(results.some((res) => res.status === 200)).toBe(true);
 
-      // Verify final state
+      // Verify final state is consistent
       const finalCustomer = await request(app.getHttpServer())
         .get(`/api/customers/${customer.id}`)
         .expect(200);
