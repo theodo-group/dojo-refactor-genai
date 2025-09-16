@@ -26,9 +26,7 @@ describe('ProductController (e2e)', () => {
     app.setGlobalPrefix('api');
     await app.init();
 
-    // Initialize fixtures
     fixtures = new GlobalFixtures(app);
-    await fixtures.load();
   });
 
   afterAll(async () => {
@@ -37,22 +35,27 @@ describe('ProductController (e2e)', () => {
   });
 
   describe('/api/products', () => {
-    it('GET / should return all available products', () => {
+    it('GET / should return all available products', async () => {
+      // Given
+      const basicProductsScenario = await fixtures.basicProductsScenario();
+      
       return request(app.getHttpServer())
         .get('/api/products')
         .expect(200)
         .expect((res) => {
           expect(Array.isArray(res.body)).toBe(true);
-          expect(res.body.length).toBe(fixtures.getProducts().length);
+          expect(res.body.length).toBe(basicProductsScenario.products.length);
           
-          // Check if products data is correct
           const productNames = res.body.map(product => product.name);
           expect(productNames).toContain('Margherita Pizza');
           expect(productNames).toContain('Caesar Salad');
         });
     });
 
-    it('GET /?category=pizza should filter products by category', () => {
+    it('GET /?category=pizza should filter products by category', async () => {
+      // Given
+      const productCatalogScenario = await fixtures.productCatalogScenario();
+      
       return request(app.getHttpServer())
         .get('/api/products?category=pizza')
         .expect(200)
@@ -68,8 +71,10 @@ describe('ProductController (e2e)', () => {
         });
     });
 
-    it('GET /:id should return product by id', () => {
-      const product = fixtures.getProducts()[0];
+    it('GET /:id should return product by id', async () => {
+      // Given
+      const basicProductsScenario = await fixtures.basicProductsScenario();
+      const product = basicProductsScenario.products[0];
       
       return request(app.getHttpServer())
         .get(`/api/products/${product.id}`)
@@ -81,7 +86,9 @@ describe('ProductController (e2e)', () => {
         });
     });
 
-    it('POST / should create a new product', () => {
+    it('POST / should create a new product', async () => {
+      // Given
+      await fixtures.basicProductsScenario();
       const createProductDto: CreateProductDto = {
         name: 'Test Product',
         description: 'This is a test product',
@@ -102,8 +109,10 @@ describe('ProductController (e2e)', () => {
         });
     });
 
-    it('PATCH /:id should update a product', () => {
-      const product = fixtures.getProducts()[0];
+    it('PATCH /:id should update a product', async () => {
+      // Given
+      const basicProductsScenario = await fixtures.basicProductsScenario();
+      const product = basicProductsScenario.products[0];
       const updateProductDto: UpdateProductDto = {
         name: 'Updated Product Name',
         price: 19.99,
@@ -117,19 +126,19 @@ describe('ProductController (e2e)', () => {
           expect(res.body.id).toBe(product.id);
           expect(res.body.name).toBe(updateProductDto.name);
           expect(parseFloat(res.body.price)).toBe(updateProductDto.price);
-          // Description should remain unchanged
           expect(res.body.description).toBe(product.description);
         });
     });
 
-    it('DELETE /:id should soft delete a product', () => {
-      const product = fixtures.getProducts()[1];
+    it('DELETE /:id should soft delete a product', async () => {
+      // Given
+      const basicProductsScenario = await fixtures.basicProductsScenario();
+      const product = basicProductsScenario.products[1];
       
       return request(app.getHttpServer())
         .delete(`/api/products/${product.id}`)
         .expect(204)
         .then(() => {
-          // Verify product is no longer in the available list
           return request(app.getHttpServer())
             .get('/api/products')
             .expect(200)

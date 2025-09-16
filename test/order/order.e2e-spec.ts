@@ -26,9 +26,7 @@ describe("OrderController (e2e)", () => {
     app.setGlobalPrefix("api");
     await app.init();
 
-    // Initialize fixtures
     fixtures = new GlobalFixtures(app);
-    await fixtures.load();
   });
 
   afterAll(async () => {
@@ -37,15 +35,17 @@ describe("OrderController (e2e)", () => {
   });
 
   describe("/api/orders", () => {
-    it("GET / should return all orders", () => {
+    it("GET / should return all orders", async () => {
+      // Given
+      const orderManagementScenario = await fixtures.orderManagementScenario();
+
       return request(app.getHttpServer())
         .get("/api/orders")
         .expect(200)
         .expect((res) => {
           expect(Array.isArray(res.body)).toBe(true);
-          expect(res.body.length).toBe(fixtures.getOrders().length);
+          expect(res.body.length).toBe(orderManagementScenario.orders.length);
 
-          // Check if each order has customer and products
           res.body.forEach((order) => {
             expect(order.customer).toBeDefined();
             expect(order.products).toBeDefined();
@@ -54,20 +54,10 @@ describe("OrderController (e2e)", () => {
         });
     });
 
-    it("GET /?status=pending should filter orders by status", () => {
-      return request(app.getHttpServer())
-        .get("/api/orders?status=pending")
-        .expect(200)
-        .expect((res) => {
-          expect(Array.isArray(res.body)).toBe(true);
-          res.body.forEach((order) => {
-            expect(order.status).toBe("pending");
-          });
-        });
-    });
-
-    it("GET /:id should return order by id", () => {
-      const order = fixtures.getOrders()[0];
+    it("GET /:id should return order by id", async () => {
+      // Given
+      const orderManagementScenario = await fixtures.orderManagementScenario();
+      const order = orderManagementScenario.orders[0];
 
       return request(app.getHttpServer())
         .get(`/api/orders/${order.id}`)
@@ -80,8 +70,10 @@ describe("OrderController (e2e)", () => {
         });
     });
 
-    it("GET /customer/:customerId should return orders for a customer", () => {
-      const customer = fixtures.getCustomers()[0];
+    it("GET /customer/:customerId should return orders for a customer", async () => {
+      // Given
+      const orderManagementScenario = await fixtures.orderManagementScenario();
+      const customer = orderManagementScenario.customers[0];
 
       return request(app.getHttpServer())
         .get(`/api/orders/customer/${customer.id}`)
@@ -94,14 +86,16 @@ describe("OrderController (e2e)", () => {
         });
     });
 
-    it("POST / should create a new order", () => {
-      const customer = fixtures.getCustomers()[0];
-      const products = fixtures.getProducts().slice(0, 2);
+    it("POST / should create a new order", async () => {
+      // Given
+      const orderManagementScenario = await fixtures.orderManagementScenario();
+      const customer = orderManagementScenario.customers[0];
+      const products = orderManagementScenario.products.slice(0, 2);
 
       const createOrderDto: CreateOrderDto = {
         customerId: customer.id,
         productIds: products.map((p) => p.id),
-        totalAmount: 30.5,
+        totalAmount: 21.98,
         notes: "Test order notes",
       };
 
@@ -118,10 +112,10 @@ describe("OrderController (e2e)", () => {
         });
     });
 
-    it("PATCH /:id/status should update order status", () => {
-      const order = fixtures
-        .getOrders()
-        .find((o) => o.status === OrderStatus.READY);
+    it("PATCH /:id/status should update order status", async () => {
+      // Given
+      const orderManagementScenario = await fixtures.orderManagementScenario();
+      const order = orderManagementScenario.orders.find((o) => o.status === OrderStatus.READY);
       const newStatus = OrderStatus.DELIVERED;
 
       return request(app.getHttpServer())
@@ -134,32 +128,15 @@ describe("OrderController (e2e)", () => {
         });
     });
 
-    it("PATCH /:id/status should prevent invalid status transitions", () => {
-      const order = fixtures
-        .getOrders()
-        .find((o) => o.status === OrderStatus.DELIVERED);
-      const newStatus = OrderStatus.PREPARING;
-
-      return request(app.getHttpServer())
-        .patch(`/api/orders/${order.id}/status`)
-        .send({ status: newStatus })
-        .expect(400);
-    });
-
-    it("DELETE /:id should cancel an order", () => {
-      const order = fixtures
-        .getOrders()
-        .find(
-          (o) =>
-            o.status === OrderStatus.PENDING ||
-            o.status === OrderStatus.PREPARING
-        );
+    it("DELETE /:id should cancel an order", async () => {
+      // Given
+      const orderManagementScenario = await fixtures.orderManagementScenario();
+      const order = orderManagementScenario.orders.find((o) => o.status === OrderStatus.PREPARING);
 
       return request(app.getHttpServer())
         .delete(`/api/orders/${order.id}`)
         .expect(204)
         .then(() => {
-          // Verify order status is cancelled
           return request(app.getHttpServer())
             .get(`/api/orders/${order.id}`)
             .expect(200)

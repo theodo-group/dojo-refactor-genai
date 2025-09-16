@@ -26,9 +26,7 @@ describe('CustomerController (e2e)', () => {
     app.setGlobalPrefix('api');
     await app.init();
 
-    // Initialize fixtures
     fixtures = new GlobalFixtures(app);
-    await fixtures.load();
   });
 
   afterAll(async () => {
@@ -37,24 +35,27 @@ describe('CustomerController (e2e)', () => {
   });
 
   describe('/api/customers', () => {
-    it('GET / should return all active customers', () => {
+    it('GET / should return all active customers', async () => {
+      // Given
+      const basicCustomersScenario = await fixtures.basicCustomersScenario();
+      
       return request(app.getHttpServer())
         .get('/api/customers')
         .expect(200)
         .expect((res) => {
           expect(Array.isArray(res.body)).toBe(true);
-          expect(res.body.length).toBe(fixtures.getCustomers().length);
+          expect(res.body.length).toBe(basicCustomersScenario.customers.length);
           
-          // Check if all customers are returned
           const emails = res.body.map(customer => customer.email);
           expect(emails).toContain('john@example.com');
           expect(emails).toContain('jane@example.com');
-          expect(emails).toContain('bob@example.com');
         });
     });
 
-    it('GET /:id should return customer by id', () => {
-      const customer = fixtures.getCustomers()[0];
+    it('GET /:id should return customer by id', async () => {
+      // Given
+      const basicCustomersScenario = await fixtures.basicCustomersScenario();
+      const customer = basicCustomersScenario.customers[0];
       
       return request(app.getHttpServer())
         .get(`/api/customers/${customer.id}`)
@@ -66,13 +67,18 @@ describe('CustomerController (e2e)', () => {
         });
     });
 
-    it('GET /:id should return 404 for non-existent customer', () => {
+    it('GET /:id should return 404 for non-existent customer', async () => {
+      // Given
+      await fixtures.basicCustomersScenario();
+      
       return request(app.getHttpServer())
         .get('/api/customers/00000000-0000-0000-0000-000000000000')
         .expect(404);
     });
 
-    it('POST / should create a new customer', () => {
+    it('POST / should create a new customer', async () => {
+      // Given
+      await fixtures.basicCustomersScenario();
       const createCustomerDto: CreateCustomerDto = {
         name: 'Test Customer',
         email: 'test@example.com',
@@ -93,7 +99,9 @@ describe('CustomerController (e2e)', () => {
         });
     });
 
-    it('POST / should validate request body', () => {
+    it('POST / should validate request body', async () => {
+      // Given
+      await fixtures.basicCustomersScenario();
       const invalidDto = {
         name: 'Test Customer',
         // Missing required email
@@ -105,8 +113,10 @@ describe('CustomerController (e2e)', () => {
         .expect(400);
     });
 
-    it('PATCH /:id should update a customer', () => {
-      const customer = fixtures.getCustomers()[0];
+    it('PATCH /:id should update a customer', async () => {
+      // Given
+      const basicCustomersScenario = await fixtures.basicCustomersScenario();
+      const customer = basicCustomersScenario.customers[0];
       const updateCustomerDto: UpdateCustomerDto = {
         name: 'Updated Name',
         phone: 'updated-phone',
@@ -120,19 +130,19 @@ describe('CustomerController (e2e)', () => {
           expect(res.body.id).toBe(customer.id);
           expect(res.body.name).toBe(updateCustomerDto.name);
           expect(res.body.phone).toBe(updateCustomerDto.phone);
-          // Email should remain unchanged
           expect(res.body.email).toBe(customer.email);
         });
     });
 
-    it('DELETE /:id should soft delete a customer', () => {
-      const customer = fixtures.getCustomers()[1];
+    it('DELETE /:id should soft delete a customer', async () => {
+      // Given
+      const basicCustomersScenario = await fixtures.basicCustomersScenario();
+      const customer = basicCustomersScenario.customers[1];
       
       return request(app.getHttpServer())
         .delete(`/api/customers/${customer.id}`)
         .expect(204)
         .then(() => {
-          // Verify customer is no longer in the active list
           return request(app.getHttpServer())
             .get('/api/customers')
             .expect(200)

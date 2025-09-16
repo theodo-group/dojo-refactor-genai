@@ -5,16 +5,17 @@ import { Customer } from '../../src/entities/customer.entity';
 import { Product } from '../../src/entities/product.entity';
 import { Order, OrderStatus } from '../../src/entities/order.entity';
 
+export interface ScenarioData {
+  customers: Customer[];
+  products: Product[];
+  orders: Order[];
+}
+
 export class GlobalFixtures {
   private app: INestApplication;
   private customerRepository: Repository<Customer>;
   private productRepository: Repository<Product>;
   private orderRepository: Repository<Order>;
-
-  // Cached fixtures for reuse across tests
-  private customers: Customer[] = [];
-  private products: Product[] = [];
-  private orders: Order[] = [];
 
   constructor(app: INestApplication) {
     this.app = app;
@@ -23,48 +24,58 @@ export class GlobalFixtures {
     this.orderRepository = app.get(getRepositoryToken(Order));
   }
 
-  async load(): Promise<void> {
-    // Clear existing data first
-    await this.clear();
-
-    // Create customers
-    this.customers = await this.createCustomers();
-    
-    // Create products
-    this.products = await this.createProducts();
-    
-    // Create orders
-    this.orders = await this.createOrders();
-  }
-
   async clear(): Promise<void> {
     // Delete in the correct order to respect foreign key constraints
     await this.orderRepository.query('TRUNCATE TABLE order_products CASCADE');
     await this.orderRepository.query('TRUNCATE TABLE orders CASCADE');
     await this.productRepository.query('TRUNCATE TABLE products CASCADE');
     await this.customerRepository.query('TRUNCATE TABLE customers CASCADE');
-    
-    // Reset cached data
-    this.customers = [];
-    this.products = [];
-    this.orders = [];
   }
 
-  // Helper methods to access fixture data
-  getCustomers(): Customer[] {
-    return this.customers;
+  // Scenario-based fixture loading
+  async basicCustomersScenario(): Promise<ScenarioData> {
+    await this.clear();
+    const customers = await this.createBasicCustomers();
+    return { customers, products: [], orders: [] };
   }
 
-  getProducts(): Product[] {
-    return this.products;
+  async basicProductsScenario(): Promise<ScenarioData> {
+    await this.clear();
+    const products = await this.createBasicProducts();
+    return { customers: [], products, orders: [] };
   }
 
-  getOrders(): Order[] {
-    return this.orders;
+  async loyalCustomerScenario(): Promise<ScenarioData> {
+    await this.clear();
+    const customers = await this.createBasicCustomers();
+    const products = await this.createBasicProducts();
+    const orders = await this.createLoyalCustomerOrders(customers, products);
+    return { customers, products, orders };
   }
 
-  // Customer creation
-  private async createCustomers(): Promise<Customer[]> {
+  async newCustomerScenario(): Promise<ScenarioData> {
+    await this.clear();
+    const customers = await this.createNewCustomers();
+    const products = await this.createBasicProducts();
+    return { customers, products, orders: [] };
+  }
+
+  async productCatalogScenario(): Promise<ScenarioData> {
+    await this.clear();
+    const products = await this.createExtendedProducts();
+    return { customers: [], products, orders: [] };
+  }
+
+  async orderManagementScenario(): Promise<ScenarioData> {
+    await this.clear();
+    const customers = await this.createBasicCustomers();
+    const products = await this.createBasicProducts();
+    const orders = await this.createVariousOrders(customers, products);
+    return { customers, products, orders };
+  }
+
+  // Customer creation methods
+  private async createBasicCustomers(): Promise<Customer[]> {
     const customers = [
       this.customerRepository.create({
         name: 'John Doe',
@@ -78,19 +89,42 @@ export class GlobalFixtures {
         phone: '987-654-3210',
         address: '456 Oak Ave',
       }),
-      this.customerRepository.create({
-        name: 'Bob Johnson',
-        email: 'bob@example.com',
-        phone: '555-555-5555',
-        address: '789 Pine Rd',
-      }),
     ];
-    
     return await this.customerRepository.save(customers);
   }
 
-  // Product creation
-  private async createProducts(): Promise<Product[]> {
+  private async createNewCustomers(): Promise<Customer[]> {
+    const customers = [
+      this.customerRepository.create({
+        name: 'Alice Brown',
+        email: 'alice@example.com',
+        phone: '111-222-3333',
+        address: '789 Pine St',
+      }),
+    ];
+    return await this.customerRepository.save(customers);
+  }
+
+  // Product creation methods
+  private async createBasicProducts(): Promise<Product[]> {
+    const products = [
+      this.productRepository.create({
+        name: 'Margherita Pizza',
+        description: 'Classic pizza with tomato sauce and mozzarella',
+        price: 12.99,
+        category: 'pizza',
+      }),
+      this.productRepository.create({
+        name: 'Caesar Salad',
+        description: 'Fresh salad with romaine lettuce and Caesar dressing',
+        price: 8.99,
+        category: 'salad',
+      }),
+    ];
+    return await this.productRepository.save(products);
+  }
+
+  private async createExtendedProducts(): Promise<Product[]> {
     const products = [
       this.productRepository.create({
         name: 'Margherita Pizza',
@@ -106,7 +140,7 @@ export class GlobalFixtures {
       }),
       this.productRepository.create({
         name: 'Caesar Salad',
-        description: 'Fresh salad with romaine lettuce, croutons, and Caesar dressing',
+        description: 'Fresh salad with romaine lettuce and Caesar dressing',
         price: 8.99,
         category: 'salad',
       }),
@@ -116,69 +150,71 @@ export class GlobalFixtures {
         price: 4.99,
         category: 'appetizer',
       }),
-      this.productRepository.create({
-        name: 'Tiramisu',
-        description: 'Classic Italian dessert with coffee and mascarpone',
-        price: 7.99,
-        category: 'dessert',
-      }),
     ];
-    
     return await this.productRepository.save(products);
   }
 
-  // Order creation
-  private async createOrders(): Promise<Order[]> {
-    // Create dates for the orders - to make first customer eligible for loyalty program
+  // Order creation methods
+  private async createLoyalCustomerOrders(customers: Customer[], products: Product[]): Promise<Order[]> {
     const now = new Date();
-    const tenDaysAgo = new Date(now);
-    tenDaysAgo.setDate(now.getDate() - 10);
-    
-    const fifteenDaysAgo = new Date(now);
-    fifteenDaysAgo.setDate(now.getDate() - 15);
-    
-    const twentyDaysAgo = new Date(now);
-    twentyDaysAgo.setDate(now.getDate() - 20);
-    
-    const twentyFiveDaysAgo = new Date(now);
-    twentyFiveDaysAgo.setDate(now.getDate() - 25);
+    const dates = [10, 15, 20, 25].map(days => {
+      const date = new Date(now);
+      date.setDate(now.getDate() - days);
+      return date;
+    });
 
     const orders = [
       this.orderRepository.create({
-        customer: this.customers[0],
-        products: [this.products[0], this.products[3]],
-        totalAmount: 17.98,
+        customer: customers[0],
+        products: [products[0]],
+        totalAmount: 12.99,
         status: OrderStatus.DELIVERED,
-        notes: 'Extra cheese please',
-        createdAt: tenDaysAgo,
-        updatedAt: tenDaysAgo
+        createdAt: dates[0],
+        updatedAt: dates[0]
       }),
       this.orderRepository.create({
-        customer: this.customers[0],
-        products: [this.products[1], this.products[2], this.products[4]],
-        totalAmount: 31.97,
-        status: OrderStatus.PREPARING,
-        createdAt: fifteenDaysAgo,
-        updatedAt: fifteenDaysAgo
-      }),
-      this.orderRepository.create({
-        customer: this.customers[0],
-        products: [this.products[0], this.products[2]],
-        totalAmount: 21.98,
+        customer: customers[0],
+        products: [products[1]],
+        totalAmount: 8.99,
         status: OrderStatus.DELIVERED,
-        createdAt: twentyDaysAgo,
-        updatedAt: twentyDaysAgo
+        createdAt: dates[1],
+        updatedAt: dates[1]
       }),
       this.orderRepository.create({
-        customer: this.customers[0],
-        products: [this.products[4]],
-        totalAmount: 7.99,
-        status: OrderStatus.READY,
-        createdAt: twentyFiveDaysAgo,
-        updatedAt: twentyFiveDaysAgo
+        customer: customers[0],
+        products: [products[0]],
+        totalAmount: 12.99,
+        status: OrderStatus.DELIVERED,
+        createdAt: dates[2],
+        updatedAt: dates[2]
+      }),
+      this.orderRepository.create({
+        customer: customers[0],
+        products: [products[1]],
+        totalAmount: 8.99,
+        status: OrderStatus.DELIVERED,
+        createdAt: dates[3],
+        updatedAt: dates[3]
       }),
     ];
-    
+    return await this.orderRepository.save(orders);
+  }
+
+  private async createVariousOrders(customers: Customer[], products: Product[]): Promise<Order[]> {
+    const orders = [
+      this.orderRepository.create({
+        customer: customers[0],
+        products: [products[0]],
+        totalAmount: 12.99,
+        status: OrderStatus.PREPARING,
+      }),
+      this.orderRepository.create({
+        customer: customers[1],
+        products: [products[1]],
+        totalAmount: 8.99,
+        status: OrderStatus.READY,
+      }),
+    ];
     return await this.orderRepository.save(orders);
   }
 }
