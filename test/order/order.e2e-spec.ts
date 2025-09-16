@@ -39,18 +39,18 @@ describe("OrderController (e2e)", () => {
 
   describe("/api/orders", () => {
     const scenario = fixtures()
-      .withCustomers({
+      .withCustomers(f => ({
         johnDoe: { name: 'John Doe', email: 'john@example.com', phone: '123-456-7890', address: '123 Main St' }
-      })
-      .withProducts({
+      }))
+      .withProducts(f => ({
         margheritaPizza: { name: 'Margherita Pizza', price: 12.99, category: 'pizza', description: 'Classic pizza with tomato sauce and mozzarella' },
         garlicBread: { name: 'Garlic Bread', price: 4.99, category: 'appetizer', description: 'Toasted bread with garlic butter' }
-      })
-      .withOrders({
-        testOrder: { customer: 'johnDoe', products: ['margheritaPizza', 'garlicBread'], status: 'pending', totalAmount: 17.98, notes: 'Test order' }
-      });
+      }))
+      .withOrders(f => ({
+        testOrder: { customer: f.customer.johnDoe, products: [f.products.margheritaPizza, f.products.garlicBread], status: 'pending', totalAmount: 17.98, notes: 'Test order' }
+      }));
 
-    let context: any;
+    let context: Context<typeof scenario>;
 
     beforeEach(async () => {
       context = await scenario.create();
