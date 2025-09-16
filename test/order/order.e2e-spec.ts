@@ -2,7 +2,7 @@ import { Test, TestingModule } from "@nestjs/testing";
 import { INestApplication, ValidationPipe } from "@nestjs/common";
 import * as request from "supertest";
 import { AppModule } from "../../src/app.module";
-import { GlobalFixtures } from "../fixtures/global-fixtures";
+import { GlobalFixtures } from "../fixtures/scenarios";
 import { CreateOrderDto } from "../../src/order/dto/create-order.dto";
 import { UpdateOrderDto } from "../../src/order/dto/update-order.dto";
 import { OrderStatus } from "../../src/entities/order.entity";
@@ -29,7 +29,6 @@ describe("OrderController (e2e)", () => {
 
     // Initialize fixtures
     fixtures = new GlobalFixtures(app);
-    await fixtures.load();
   });
 
   afterAll(async () => {
@@ -42,13 +41,15 @@ describe("OrderController (e2e)", () => {
   });
 
   describe("/api/orders", () => {
-    it("GET / should return all orders", () => {
+    it("GET / should return all orders", async () => {
+      await fixtures.basicOrderScenario();
+      
       return request(app.getHttpServer())
         .get("/api/orders")
         .expect(200)
         .expect((res) => {
           expect(Array.isArray(res.body)).toBe(true);
-          expect(res.body.length).toBe(fixtures.getOrders().length);
+          expect(res.body.length).toBe(fixtures.getAllLoadedOrders().length);
 
           // Check if each order has customer and products
           res.body.forEach((order) => {
@@ -59,7 +60,9 @@ describe("OrderController (e2e)", () => {
         });
     });
 
-    it("GET /?status=pending should filter orders by status", () => {
+    it("GET /?status=pending should filter orders by status", async () => {
+      await fixtures.orderStatusScenario();
+      
       return request(app.getHttpServer())
         .get("/api/orders?status=pending")
         .expect(200)
@@ -71,8 +74,9 @@ describe("OrderController (e2e)", () => {
         });
     });
 
-    it("GET /:id should return order by id", () => {
-      const order = fixtures.getOrders()[0];
+    it("GET /:id should return order by id", async () => {
+      const data = await fixtures.basicOrderScenario();
+      const order = data.orders[0];
 
       return request(app.getHttpServer())
         .get(`/api/orders/${order.id}`)
@@ -85,8 +89,9 @@ describe("OrderController (e2e)", () => {
         });
     });
 
-    it("GET /customer/:customerId should return orders for a customer", () => {
-      const customer = fixtures.getCustomers()[0];
+    it("GET /customer/:customerId should return orders for a customer", async () => {
+      const data = await fixtures.loyalCustomerScenario();
+      const customer = data.customers[0];
 
       return request(app.getHttpServer())
         .get(`/api/orders/customer/${customer.id}`)
@@ -99,9 +104,10 @@ describe("OrderController (e2e)", () => {
         });
     });
 
-    it("POST / should create a new order", () => {
-      const customer = fixtures.getCustomers()[1]; // Jane Smith has no existing orders, no discount
-      const products = fixtures.getProducts().slice(0, 2);
+    it("POST / should create a new order", async () => {
+      const data = await fixtures.basicOrderScenario();
+      const customer = data.customers[1]; // Jane Smith has no existing orders, no discount
+      const products = data.products.slice(0, 2);
       // Margherita Pizza (12.99) + Pepperoni Pizza (14.99) = 27.98
 
       const createOrderDto: CreateOrderDto = {
@@ -124,10 +130,9 @@ describe("OrderController (e2e)", () => {
         });
     });
 
-    it("PATCH /:id/status should update order status", () => {
-      const order = fixtures
-        .getOrders()
-        .find((o) => o.status === OrderStatus.PREPARING);
+    it("PATCH /:id/status should update order status", async () => {
+      const data = await fixtures.orderStatusScenario();
+      const order = data.orders.find((o) => o.status === OrderStatus.PREPARING);
       const newStatus = OrderStatus.READY;
 
       return request(app.getHttpServer())
@@ -140,10 +145,9 @@ describe("OrderController (e2e)", () => {
         });
     });
 
-    it("PATCH /:id/status should prevent invalid status transitions", () => {
-      const order = fixtures
-        .getOrders()
-        .find((o) => o.status === OrderStatus.DELIVERED);
+    it("PATCH /:id/status should prevent invalid status transitions", async () => {
+      const data = await fixtures.orderStatusScenario();
+      const order = data.orders.find((o) => o.status === OrderStatus.DELIVERED);
       const newStatus = OrderStatus.PREPARING;
 
       return request(app.getHttpServer())
@@ -152,14 +156,13 @@ describe("OrderController (e2e)", () => {
         .expect(400);
     });
 
-    it("DELETE /:id should cancel an order", () => {
-      const order = fixtures
-        .getOrders()
-        .find(
-          (o) =>
-            o.status === OrderStatus.PENDING ||
-            o.status === OrderStatus.PREPARING
-        );
+    it("DELETE /:id should cancel an order", async () => {
+      const data = await fixtures.orderStatusScenario();
+      const order = data.orders.find(
+        (o) =>
+          o.status === OrderStatus.PENDING ||
+          o.status === OrderStatus.PREPARING
+      );
 
       return request(app.getHttpServer())
         .delete(`/api/orders/${order.id}`)
@@ -176,9 +179,10 @@ describe("OrderController (e2e)", () => {
     });
 
     // NEW COMPREHENSIVE TESTS
-    it("POST / should validate total amount matches product prices", () => {
-      const customer = fixtures.getCustomers()[1]; // Jane Smith - no existing orders
-      const products = fixtures.getProducts().slice(0, 2); // First 2 products: 12.99 + 14.99 = 27.98
+    it("POST / should validate total amount matches product prices", async () => {
+      const data = await fixtures.basicOrderScenario();
+      const customer = data.customers[1]; // Jane Smith - no existing orders
+      const products = data.products.slice(0, 2); // First 2 products: 12.99 + 14.99 = 27.98
 
       const invalidTotalDto: CreateOrderDto = {
         customerId: customer.id,
@@ -196,8 +200,9 @@ describe("OrderController (e2e)", () => {
         });
     });
 
-    it("GET /customer/:customerId should filter orders by date range", () => {
-      const customer = fixtures.getCustomers()[0]; // John Doe has multiple orders
+    it("GET /customer/:customerId should filter orders by date range", async () => {
+      const data = await fixtures.loyalCustomerScenario();
+      const customer = data.customers[0]; // John Loyal has multiple orders
 
       // Get orders from the last 12 days (should include some but not all)
       const endDate = new Date().toISOString().split("T")[0];
@@ -229,11 +234,10 @@ describe("OrderController (e2e)", () => {
         });
     });
 
-    it("PATCH /:id should prevent updating orders with invalid status transitions", () => {
+    it("PATCH /:id should prevent updating orders with invalid status transitions", async () => {
       // Try to update a delivered order (should fail)
-      const deliveredOrder = fixtures
-        .getOrders()
-        .find((o) => o.status === OrderStatus.DELIVERED);
+      const data = await fixtures.orderStatusScenario();
+      const deliveredOrder = data.orders.find((o) => o.status === OrderStatus.DELIVERED);
 
       const invalidUpdateDto: UpdateOrderDto = {
         notes: "Trying to modify delivered order",
@@ -253,9 +257,10 @@ describe("OrderController (e2e)", () => {
 
     it("POST / should apply customer loyalty discounts correctly", async () => {
       // Get a customer with multiple orders for loyalty discount
-      const customer = fixtures.getCustomers()[0]; // John Doe has multiple orders
-      const products = fixtures.getProducts().slice(0, 2);
-      const baseTotal = 27.98; // 12.99 + 14.99
+      const data = await fixtures.loyalCustomerScenario();
+      const customer = data.customers[0]; // John Loyal has multiple orders
+      const products = data.products.slice(0, 2);
+      const baseTotal = 21.98; // 12.99 + 8.99
 
       const createOrderDto: CreateOrderDto = {
         customerId: customer.id,
@@ -285,11 +290,10 @@ describe("OrderController (e2e)", () => {
         });
     });
 
-    it("POST / should validate product availability", () => {
-      const customer = fixtures.getCustomers()[0];
-      const unavailableProduct = fixtures
-        .getProducts()
-        .find((p) => !p.isAvailable);
+    it("POST / should validate product availability", async () => {
+      const availabilityData = await fixtures.productAvailabilityScenario();
+      const customer = availabilityData.customers[0];
+      const unavailableProduct = availabilityData.products.find((p) => !p.isAvailable);
 
       if (unavailableProduct) {
         const invalidOrderDto: CreateOrderDto = {
@@ -327,12 +331,9 @@ describe("OrderController (e2e)", () => {
     });
 
     it("DELETE /:id should handle orders with different statuses differently", async () => {
-      const pendingOrder = fixtures
-        .getOrders()
-        .find((o) => o.status === OrderStatus.PENDING);
-      const deliveredOrder = fixtures
-        .getOrders()
-        .find((o) => o.status === OrderStatus.DELIVERED);
+      const data = await fixtures.orderStatusScenario();
+      const pendingOrder = data.orders.find((o) => o.status === OrderStatus.PENDING);
+      const deliveredOrder = data.orders.find((o) => o.status === OrderStatus.DELIVERED);
 
       // Should be able to cancel pending order
       await request(app.getHttpServer())
@@ -358,11 +359,10 @@ describe("OrderController (e2e)", () => {
         });
     });
 
-    it("POST / should validate minimum order amount", () => {
-      const customer = fixtures.getCustomers()[0];
-      const cheapProduct = fixtures
-        .getProducts()
-        .find((p) => parseFloat(p.price.toString()) < 1.0);
+    it("POST / should validate minimum order amount", async () => {
+      const data = await fixtures.basicOrderScenario();
+      const customer = data.customers[0];
+      const cheapProduct = data.products.find((p) => parseFloat(p.price.toString()) < 1.0);
 
       if (cheapProduct) {
         const tooSmallOrderDto: CreateOrderDto = {
@@ -397,7 +397,8 @@ describe("OrderController (e2e)", () => {
     });
 
     it("PATCH /:id should validate order modifications based on time constraints", async () => {
-      const recentOrder = fixtures.getRecentOrderForModification();
+      const data = await fixtures.recentOrderScenario();
+      const recentOrder = data.orders[0];
 
       if (recentOrder) {
         // Should allow modifications within time window
@@ -408,12 +409,10 @@ describe("OrderController (e2e)", () => {
       }
     });
 
-    it("POST / should handle large orders with many products", () => {
-      const customer = fixtures.getCustomers()[5]; // Update Test Customer - has no prior orders
-      const availableProducts = fixtures
-        .getProducts()
-        .filter((p) => p.isAvailable !== false)
-        .slice(0, 8); // Use available products only
+    it("POST / should handle large orders with many products", async () => {
+      const data = await fixtures.largeOrderScenario();
+      const customer = data.customers[0]; // Large Order Customer - has no prior orders
+      const availableProducts = data.products.filter((p) => p.isAvailable !== false);
       const totalAmount = availableProducts.reduce(
         (sum, p) => sum + parseFloat(p.price.toString()),
         0
@@ -436,8 +435,9 @@ describe("OrderController (e2e)", () => {
         });
     });
 
-    it("GET /customer/:customerId/stats should return customer order statistics", () => {
-      const customer = fixtures.getCustomers()[0];
+    it("GET /customer/:customerId/stats should return customer order statistics", async () => {
+      const data = await fixtures.loyalCustomerScenario();
+      const customer = data.customers[0];
 
       return request(app.getHttpServer())
         .get(`/api/orders/customer/${customer.id}/stats`)
@@ -453,8 +453,9 @@ describe("OrderController (e2e)", () => {
     });
 
     it("should handle concurrent order creation for same customer", async () => {
-      const customer = fixtures.getCustomers()[1];
-      const product = fixtures.getProducts()[0];
+      const data = await fixtures.multipleCustomersScenario();
+      const customer = data.customers[1];
+      const product = data.products[0];
 
       const concurrentOrders = Array.from({ length: 3 }, (_, i) => ({
         customerId: customer.id,
