@@ -2,13 +2,13 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import * as request from 'supertest';
 import { AppModule } from '../../src/app.module';
-import { GlobalFixtures } from '../fixtures/global-fixtures';
+import { CustomerFixtureFactory } from '../fixtures/factories/customer-fixture.factory';
 import { CreateCustomerDto } from '../../src/customer/dto/create-customer.dto';
 import { UpdateCustomerDto } from '../../src/customer/dto/update-customer.dto';
 
 describe('CustomerController (e2e)', () => {
   let app: INestApplication;
-  let fixtures: GlobalFixtures;
+  let customerFixtures: CustomerFixtureFactory;
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -26,13 +26,36 @@ describe('CustomerController (e2e)', () => {
     app.setGlobalPrefix('api');
     await app.init();
 
-    // Initialize fixtures
-    fixtures = new GlobalFixtures(app);
-    await fixtures.load();
+    // Initialize customer fixtures
+    customerFixtures = new CustomerFixtureFactory(app);
+    await customerFixtures.init(app);
+
+    // Create test customers
+    customerFixtures
+      .addBasicCustomer({
+        name: 'John Doe',
+        email: 'john@example.com',
+        phone: '123-456-7890',
+        address: '123 Main St',
+      })
+      .addBasicCustomer({
+        name: 'Jane Smith',
+        email: 'jane@example.com',
+        phone: '987-654-3210',
+        address: '456 Oak Ave',
+      })
+      .addBasicCustomer({
+        name: 'Bob Johnson',
+        email: 'bob@example.com',
+        phone: '555-555-5555',
+        address: '789 Pine Rd',
+      });
+
+    await customerFixtures.build();
   });
 
   afterAll(async () => {
-    await fixtures.clear();
+    await customerFixtures.cleanup();
     await app.close();
   });
 
@@ -43,8 +66,8 @@ describe('CustomerController (e2e)', () => {
         .expect(200)
         .expect((res) => {
           expect(Array.isArray(res.body)).toBe(true);
-          expect(res.body.length).toBe(fixtures.getCustomers().length);
-          
+          expect(res.body.length).toBe(customerFixtures.getData().length);
+
           // Check if all customers are returned
           const emails = res.body.map(customer => customer.email);
           expect(emails).toContain('john@example.com');
@@ -54,8 +77,8 @@ describe('CustomerController (e2e)', () => {
     });
 
     it('GET /:id should return customer by id', () => {
-      const customer = fixtures.getCustomers()[0];
-      
+      const customer = customerFixtures.getCustomer(0);
+
       return request(app.getHttpServer())
         .get(`/api/customers/${customer.id}`)
         .expect(200)
@@ -106,12 +129,12 @@ describe('CustomerController (e2e)', () => {
     });
 
     it('PATCH /:id should update a customer', () => {
-      const customer = fixtures.getCustomers()[0];
+      const customer = customerFixtures.getCustomer(0);
       const updateCustomerDto: UpdateCustomerDto = {
         name: 'Updated Name',
         phone: 'updated-phone',
       };
-      
+
       return request(app.getHttpServer())
         .patch(`/api/customers/${customer.id}`)
         .send(updateCustomerDto)
@@ -126,8 +149,8 @@ describe('CustomerController (e2e)', () => {
     });
 
     it('DELETE /:id should soft delete a customer', () => {
-      const customer = fixtures.getCustomers()[1];
-      
+      const customer = customerFixtures.getCustomer(1);
+
       return request(app.getHttpServer())
         .delete(`/api/customers/${customer.id}`)
         .expect(204)

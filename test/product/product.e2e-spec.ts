@@ -2,13 +2,13 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import * as request from 'supertest';
 import { AppModule } from '../../src/app.module';
-import { GlobalFixtures } from '../fixtures/global-fixtures';
+import { ProductFixtureFactory } from '../fixtures/factories/product-fixture.factory';
 import { CreateProductDto } from '../../src/product/dto/create-product.dto';
 import { UpdateProductDto } from '../../src/product/dto/update-product.dto';
 
 describe('ProductController (e2e)', () => {
   let app: INestApplication;
-  let fixtures: GlobalFixtures;
+  let productFixtures: ProductFixtureFactory;
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -26,13 +26,17 @@ describe('ProductController (e2e)', () => {
     app.setGlobalPrefix('api');
     await app.init();
 
-    // Initialize fixtures
-    fixtures = new GlobalFixtures(app);
-    await fixtures.load();
+    // Initialize product fixtures
+    productFixtures = new ProductFixtureFactory(app);
+    await productFixtures.init(app);
+
+    // Create complete product menu
+    productFixtures.addCompleteMenu();
+    await productFixtures.build();
   });
 
   afterAll(async () => {
-    await fixtures.clear();
+    await productFixtures.cleanup();
     await app.close();
   });
 
@@ -43,7 +47,7 @@ describe('ProductController (e2e)', () => {
         .expect(200)
         .expect((res) => {
           expect(Array.isArray(res.body)).toBe(true);
-          expect(res.body.length).toBe(fixtures.getProducts().length);
+          expect(res.body.length).toBe(productFixtures.getData().length);
           
           // Check if products data is correct
           const productNames = res.body.map(product => product.name);
@@ -69,8 +73,8 @@ describe('ProductController (e2e)', () => {
     });
 
     it('GET /:id should return product by id', () => {
-      const product = fixtures.getProducts()[0];
-      
+      const product = productFixtures.getData()[0];
+
       return request(app.getHttpServer())
         .get(`/api/products/${product.id}`)
         .expect(200)
@@ -103,12 +107,12 @@ describe('ProductController (e2e)', () => {
     });
 
     it('PATCH /:id should update a product', () => {
-      const product = fixtures.getProducts()[0];
+      const product = productFixtures.getData()[0];
       const updateProductDto: UpdateProductDto = {
         name: 'Updated Product Name',
         price: 19.99,
       };
-      
+
       return request(app.getHttpServer())
         .patch(`/api/products/${product.id}`)
         .send(updateProductDto)
@@ -123,8 +127,8 @@ describe('ProductController (e2e)', () => {
     });
 
     it('DELETE /:id should soft delete a product', () => {
-      const product = fixtures.getProducts()[1];
-      
+      const product = productFixtures.getData()[1];
+
       return request(app.getHttpServer())
         .delete(`/api/products/${product.id}`)
         .expect(204)

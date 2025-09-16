@@ -2,11 +2,11 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import * as request from 'supertest';
 import { AppModule } from './../src/app.module';
-import { GlobalFixtures } from './fixtures/global-fixtures';
+import { ScenarioFixtures } from './fixtures/scenarios/scenario-fixtures';
 
 describe('AppController (e2e)', () => {
   let app: INestApplication;
-  let fixtures: GlobalFixtures;
+  let scenarioFixtures: ScenarioFixtures;
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -24,13 +24,13 @@ describe('AppController (e2e)', () => {
     app.setGlobalPrefix('api');
     await app.init();
 
-    // Initialize fixtures
-    fixtures = new GlobalFixtures(app);
-    await fixtures.load();
+    // Initialize minimal fixtures for basic app functionality
+    scenarioFixtures = new ScenarioFixtures(app);
+    await scenarioFixtures.createMinimalScenario();
   });
 
   afterAll(async () => {
-    await fixtures.clear();
+    await scenarioFixtures.cleanup();
     await app.close();
   });
 
