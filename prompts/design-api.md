@@ -227,3 +227,159 @@
   5. declarative\
   \
   Show me how it would look like
+
+  Perfect! Here's how the API would look with your preferences:
+
+  New Fixtures API Design
+
+  Basic Usage:
+
+  describe('OrderController (e2e)', () => {
+    let fixtures: FixtureEngine<{
+      customers: { alice: Customer, bob: Customer },
+      products: { pizza: Product, soda: Product, salad: Product },
+      orders: { aliceOrder: Order }
+    }>;
+
+    beforeEach(async () => {
+      fixtures = await FixtureEngine.create(app)
+        .withCustomers({
+          alice: customer({ name: 'Alice', email: 'alice@test.com'
+  }),
+          bob: customer({ name: 'Bob', email: 'bob@test.com' })
+        })
+        .withProducts({
+          pizza: product({ name: 'Margherita Pizza', price: 12.99,
+  category: 'pizza' }),
+          soda: product({ name: 'Cola', price: 2.99, category:
+  'drink' }),
+          salad: product({ name: 'Caesar Salad', price: 8.99,
+  category: 'salad' })
+        })
+        .withOrders({
+          aliceOrder: order('alice', ['pizza', 'soda'], { status:
+  OrderStatus.PENDING })
+        })
+        .build();
+    });
+
+    afterEach(async () => {
+      await fixtures.cleanup();
+    });
+
+    it('should get order by ID', () => {
+      const order = fixtures.orders.aliceOrder;
+
+      return request(app.getHttpServer())
+        .get(`/api/orders/${order.id}`)
+        .expect(200)
+        .expect((res) => {
+          expect(res.body.id).toBe(order.id);
+          expect(res.body.customer.name).toBe('Alice');
+          expect(res.body.products).toHaveLength(2);
+        });
+    });
+
+    it('should create new order', () => {
+      const customer = fixtures.customers.bob;
+      const products = [fixtures.products.pizza,
+  fixtures.products.salad];
+
+      return request(app.getHttpServer())
+        .post('/api/orders')
+        .send({
+          customerId: customer.id,
+          productIds: products.map(p => p.id),
+          totalAmount: 21.98
+        })
+        .expect(201);
+    });
+  });
+
+  Scenario Compositions:
+
+  // Define reusable scenarios
+  const loyalCustomerScenario = () => ({
+    customers: {
+      loyal: customer({ name: 'Loyal Customer' })
+    },
+    orders: {
+      order1: order('loyal', ['pizza'], { status:
+  OrderStatus.DELIVERED, createdAt: daysAgo(30) }),
+      order2: order('loyal', ['salad'], { status:
+  OrderStatus.DELIVERED, createdAt: daysAgo(20) }),
+      order3: order('loyal', ['pizza', 'soda'], { status:
+  OrderStatus.DELIVERED, createdAt: daysAgo(10) }),
+      order4: order('loyal', ['salad'], { status: OrderStatus.READY,
+  createdAt: daysAgo(5) })
+    }
+  });
+
+  // Use in tests
+  beforeEach(async () => {
+    fixtures = await FixtureEngine.create(app)
+      .withProducts({
+        pizza: product({ name: 'Pizza', price: 12.99 }),
+        soda: product({ name: 'Soda', price: 2.99 }),
+        salad: product({ name: 'Salad', price: 8.99 })
+      })
+      .extend(loyalCustomerScenario())
+      .build();
+  });
+
+  it('should apply loyalty discount', async () => {
+    const customer = fixtures.customers.loyal;
+    // Customer already has 4+ orders, should get discount
+  });
+
+  Advanced Customization:
+
+  // Override defaults with partial objects
+  fixtures = await FixtureEngine.create(app)
+    .withCustomers({
+      premium: customer({
+        name: 'Premium User',
+        // defaults are merged: email auto-generated, phone 
+  auto-generated, etc.
+      }),
+      basic: customer() // uses all defaults
+    })
+    .withProducts({
+      expensive: product({ price: 99.99 }), // name, category 
+  auto-generated
+      cheap: product({ price: 1.99, name: 'Budget Item' })
+    })
+    .build();
+
+  // Type safety ensures you can't reference non-existent keys
+  fixtures.customers.premium.name; // ✅ Typed as string
+  fixtures.customers.nonexistent; // ❌ TypeScript error
+  fixtures.orders.alice; // ❌ TypeScript error (no orders defined)
+
+  Helper Methods:
+
+  // Builder provides helper methods
+  const fixtures = await FixtureEngine.create(app)
+    .withCustomers({
+      alice: customer(),
+      bob: customer()
+    })
+    .withProducts({
+      pizza: product({ category: 'food' }),
+      drink: product({ category: 'beverage' })
+    })
+    // Helper: create orders for all customers
+    .withOrdersForEachCustomer(['pizza', 'drink'])
+    // Helper: bulk create similar entities
+    .withBulkProducts(5, { category: 'dessert' }) // creates 
+  dessert1, dessert2, etc.
+    .build();
+
+  This design gives you:
+  - Strong typing with record-based access
+  - Minimal boilerplate through defaults and helpers
+  - Full customization via partial overrides
+  - Test isolation through transactional cleanup
+  - Elegant API that's both declarative and flexible
+
+  Would you like me to proceed with implementing this design?
