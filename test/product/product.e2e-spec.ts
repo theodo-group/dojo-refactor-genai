@@ -1,14 +1,14 @@
-import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication, ValidationPipe } from '@nestjs/common';
-import * as request from 'supertest';
-import { AppModule } from '../../src/app.module';
-import { GlobalFixtures } from '../fixtures/global-fixtures';
-import { CreateProductDto } from '../../src/product/dto/create-product.dto';
-import { UpdateProductDto } from '../../src/product/dto/update-product.dto';
+import { Test, TestingModule } from "@nestjs/testing";
+import { INestApplication, ValidationPipe } from "@nestjs/common";
+import * as request from "supertest";
+import { AppModule } from "../../src/app.module";
+import { CreateProductDto } from "../../src/product/dto/create-product.dto";
+import { UpdateProductDto } from "../../src/product/dto/update-product.dto";
+import { useScenario, resetDatabase } from "../fixtures/scenario/registry";
+import "../fixtures/scenarios/products-default";
 
-describe('ProductController (e2e)', () => {
+describe("ProductController (e2e)", () => {
   let app: INestApplication;
-  let fixtures: GlobalFixtures;
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -21,56 +21,56 @@ describe('ProductController (e2e)', () => {
         whitelist: true,
         transform: true,
         forbidNonWhitelisted: true,
-      }),
+      })
     );
-    app.setGlobalPrefix('api');
+    app.setGlobalPrefix("api");
     await app.init();
-
-    // Initialize fixtures
-    fixtures = new GlobalFixtures(app);
-    await fixtures.load();
   });
 
   afterAll(async () => {
-    await fixtures.clear();
+    await resetDatabase(app);
     await app.close();
   });
 
-  describe('/api/products', () => {
-    it('GET / should return all available products', () => {
+  describe("/api/products", () => {
+    it("GET / should return all available products", async () => {
+      await useScenario(app, "products-default").load();
+
       return request(app.getHttpServer())
-        .get('/api/products')
+        .get("/api/products")
         .expect(200)
         .expect((res) => {
           expect(Array.isArray(res.body)).toBe(true);
-          expect(res.body.length).toBe(fixtures.getProducts().length);
-          
-          // Check if products data is correct
-          const productNames = res.body.map(product => product.name);
-          expect(productNames).toContain('Margherita Pizza');
-          expect(productNames).toContain('Caesar Salad');
+          expect(res.body.length).toBe(5);
+
+          const productNames = res.body.map((product: any) => product.name);
+          expect(productNames).toContain("Margherita Pizza");
+          expect(productNames).toContain("Caesar Salad");
         });
     });
 
-    it('GET /?category=pizza should filter products by category', () => {
+    it("GET /?category=pizza should filter products by category", async () => {
+      await useScenario(app, "products-default").load();
+
       return request(app.getHttpServer())
-        .get('/api/products?category=pizza')
+        .get("/api/products?category=pizza")
         .expect(200)
         .expect((res) => {
           expect(Array.isArray(res.body)).toBe(true);
-          res.body.forEach(product => {
-            expect(product.category).toBe('pizza');
+          res.body.forEach((product: any) => {
+            expect(product.category).toBe("pizza");
           });
-          
-          const productNames = res.body.map(product => product.name);
-          expect(productNames).toContain('Margherita Pizza');
-          expect(productNames).toContain('Pepperoni Pizza');
+
+          const productNames = res.body.map((product: any) => product.name);
+          expect(productNames).toContain("Margherita Pizza");
+          expect(productNames).toContain("Pepperoni Pizza");
         });
     });
 
-    it('GET /:id should return product by id', () => {
-      const product = fixtures.getProducts()[0];
-      
+    it("GET /:id should return product by id", async () => {
+      const s = await useScenario(app, "products-default").load();
+      const product = s.product("margherita");
+
       return request(app.getHttpServer())
         .get(`/api/products/${product.id}`)
         .expect(200)
@@ -81,16 +81,18 @@ describe('ProductController (e2e)', () => {
         });
     });
 
-    it('POST / should create a new product', () => {
+    it("POST / should create a new product", async () => {
+      await useScenario(app, "products-default").load();
+
       const createProductDto: CreateProductDto = {
-        name: 'Test Product',
-        description: 'This is a test product',
+        name: "Test Product",
+        description: "This is a test product",
         price: 9.99,
-        category: 'test',
+        category: "test",
       };
-      
+
       return request(app.getHttpServer())
-        .post('/api/products')
+        .post("/api/products")
         .send(createProductDto)
         .expect(201)
         .expect((res) => {
@@ -102,13 +104,15 @@ describe('ProductController (e2e)', () => {
         });
     });
 
-    it('PATCH /:id should update a product', () => {
-      const product = fixtures.getProducts()[0];
+    it("PATCH /:id should update a product", async () => {
+      const s = await useScenario(app, "products-default").load();
+      const product = s.product("margherita");
+
       const updateProductDto: UpdateProductDto = {
-        name: 'Updated Product Name',
+        name: "Updated Product Name",
         price: 19.99,
       };
-      
+
       return request(app.getHttpServer())
         .patch(`/api/products/${product.id}`)
         .send(updateProductDto)
@@ -117,24 +121,25 @@ describe('ProductController (e2e)', () => {
           expect(res.body.id).toBe(product.id);
           expect(res.body.name).toBe(updateProductDto.name);
           expect(parseFloat(res.body.price)).toBe(updateProductDto.price);
-          // Description should remain unchanged
           expect(res.body.description).toBe(product.description);
         });
     });
 
-    it('DELETE /:id should soft delete a product', () => {
-      const product = fixtures.getProducts()[1];
-      
+    it("DELETE /:id should soft delete a product", async () => {
+      const s = await useScenario(app, "products-default").load();
+      const product = s.product("pepperoni");
+
       return request(app.getHttpServer())
         .delete(`/api/products/${product.id}`)
         .expect(204)
         .then(() => {
-          // Verify product is no longer in the available list
           return request(app.getHttpServer())
-            .get('/api/products')
+            .get("/api/products")
             .expect(200)
             .expect((res) => {
-              const foundProduct = res.body.find(p => p.id === product.id);
+              const foundProduct = res.body.find(
+                (p: any) => p.id === product.id
+              );
               expect(foundProduct).toBeUndefined();
             });
         });

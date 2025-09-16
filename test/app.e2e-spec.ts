@@ -1,12 +1,11 @@
-import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication, ValidationPipe } from '@nestjs/common';
-import * as request from 'supertest';
-import { AppModule } from './../src/app.module';
-import { GlobalFixtures } from './fixtures/global-fixtures';
+import { Test, TestingModule } from "@nestjs/testing";
+import { INestApplication, ValidationPipe } from "@nestjs/common";
+import * as request from "supertest";
+import { AppModule } from "./../src/app.module";
+import { resetDatabase } from "./fixtures/scenario/registry";
 
-describe('AppController (e2e)', () => {
+describe("AppController (e2e)", () => {
   let app: INestApplication;
-  let fixtures: GlobalFixtures;
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -19,24 +18,18 @@ describe('AppController (e2e)', () => {
         whitelist: true,
         transform: true,
         forbidNonWhitelisted: true,
-      }),
+      })
     );
-    app.setGlobalPrefix('api');
+    app.setGlobalPrefix("api");
     await app.init();
-
-    // Initialize fixtures
-    fixtures = new GlobalFixtures(app);
-    await fixtures.load();
   });
 
   afterAll(async () => {
-    await fixtures.clear();
+    await resetDatabase(app);
     await app.close();
   });
 
-  it('/ (GET)', () => {
-    return request(app.getHttpServer())
-      .get('/')
-      .expect(404); // Root path is not defined
+  it("/ (GET)", () => {
+    return request(app.getHttpServer()).get("/").expect(404);
   });
 });

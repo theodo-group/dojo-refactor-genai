@@ -24,17 +24,11 @@ export class GlobalFixtures {
     this.orderRepository = app.get(getRepositoryToken(Order));
   }
 
+  // DEPRECATED: suites now use per-test scenarios. Kept for compatibility if needed.
   async load(): Promise<void> {
-    // Clear existing data first
     await this.clear();
-
-    // Create customers
     this.customers = await this.createCustomers();
-
-    // Create products
     this.products = await this.createProducts();
-
-    // Create orders
     this.orders = await this.createOrders();
   }
 
