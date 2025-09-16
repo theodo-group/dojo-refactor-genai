@@ -138,11 +138,11 @@ export class OrderFixtures {
     const fifteenDaysAgo = new Date(now);
     fifteenDaysAgo.setDate(now.getDate() - 15);
 
-    const twentyDaysAgo = new Date(now);
-    twentyDaysAgo.setDate(now.getDate() - 20);
+    const fortyDaysAgo = new Date(now);
+    fortyDaysAgo.setDate(now.getDate() - 40);
 
-    const twentyFiveDaysAgo = new Date(now);
-    twentyFiveDaysAgo.setDate(now.getDate() - 25);
+    const twoMonthAgo = new Date(now);
+    twoMonthAgo.setDate(now.getDate() - 60);
 
     const orders = [
       this.orderRepository.create({
@@ -167,16 +167,16 @@ export class OrderFixtures {
         products: [this.products[0], this.products[2]],
         totalAmount: 21.98,
         status: OrderStatus.DELIVERED,
-        createdAt: twentyDaysAgo,
-        updatedAt: twentyDaysAgo,
+        createdAt: fortyDaysAgo,
+        updatedAt: fortyDaysAgo,
       }),
       this.orderRepository.create({
         customer: this.customers[0],
         products: [this.products[4]],
         totalAmount: 7.99,
         status: OrderStatus.READY,
-        createdAt: twentyFiveDaysAgo,
-        updatedAt: twentyFiveDaysAgo,
+        createdAt: twoMonthAgo,
+        updatedAt: twoMonthAgo,
       }),
     ];
 
