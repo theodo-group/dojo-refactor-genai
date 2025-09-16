@@ -1,0 +1,1 @@
+Tu es un développeur web senior. Fais un plan d'implémentation sour format .md qu'un développeur junior peut suivre dans le but de faire une refaco du premier test

@@ -181,4 +181,13 @@ export class GlobalFixtures {
     
     return await this.orderRepository.save(orders);
   }
+
+  // Crée les données nécessaires pour le test GET /api/orders
+  async createOrdersListFixture(): Promise<Order[]> {
+    await this.clear();
+    this.customers = await this.createCustomers();
+    this.products = await this.createProducts();
+    this.orders = await this.createOrders();
+    return this.orders;
+  }
 }
