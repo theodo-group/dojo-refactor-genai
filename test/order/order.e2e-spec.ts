@@ -111,7 +111,7 @@ describe("OrderController (e2e)", () => {
         .expect(201)
         .expect((res) => {
           expect(res.body.status).toBe(OrderStatus.PENDING);
-          expect(res.body.totalAmount).toBe(createOrderDto.totalAmount);
+          expect(res.body.totalAmount).toBe(createOrderDto.totalAmount); // BAD: received 27.45
           expect(res.body.notes).toBe(createOrderDto.notes);
           expect(res.body.customer.id).toBe(customer.id);
           expect(res.body.products.length).toBe(products.length);
