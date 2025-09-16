@@ -1,0 +1,69 @@
+I want to refactor the fixture logic of this codebase. The problem I have with the current approach is that the same fixtures are used in all test, creating some tight-coupling which tend to make tests depend on each others.
+
+I thought about a builder approach that I'll show you through the following code samples. I would like you to design the implementation that would allow to fit to this kind of use cases:
+ 
+// Customer fixture builder
+const customer = fixtures.customer()
+  .withName('John Doe')
+  .withEmail('john@example.com')
+  .withPhone('123-456-7890')
+  .build();
+
+// Or use defaults
+const defaultCustomer = fixtures.customer().build();
+
+// Override specific fields
+const vipCustomer = fixtures.customer()
+  .withName('VIP Customer')
+  .withEmail('vip@example.com')
+  .build();
+
+
+// Simple order
+const order = fixtures.order()
+  .forCustomer(customer)
+  .withProduct(margherita)
+  .withProduct(caesarSalad)
+  .withStatus(OrderStatus.DELIVERED)
+  .build();
+
+// Order with calculated total
+const orderWithTotal = fixtures.order()
+  .forCustomer(customer)
+  .withProducts([margherita, caesarSalad])
+  .calculateTotal() // Automatically calculates from products
+  .build();
+
+// Historical order (for loyalty testing)
+const oldOrder = fixtures.order()
+  .forCustomer(customer)
+  .withProduct(margherita)
+  .createdDaysAgo(15)
+  .withStatus(OrderStatus.DELIVERED)
+  .build();
+
+
+  // Create a customer with order history for loyalty testing
+const loyalCustomer = fixtures.scenario()
+  .loyalCustomer()
+  .withOrderHistory([
+    { daysAgo: 25, products: ['pizza'], status: OrderStatus.DELIVERED },
+    { daysAgo: 20, products: ['pizza', 'salad'], status: OrderStatus.DELIVERED },
+    { daysAgo: 15, products: ['pizza'], status: OrderStatus.DELIVERED },
+    { daysAgo: 10, products: ['dessert'], status: OrderStatus.DELIVERED },
+  ])
+  .build();
+
+// New customer scenario
+const newCustomer = fixtures.scenario()
+  .newCustomer()
+  .withName('Jane Smith')
+  .build();
+
+// Restaurant menu scenario
+const menuItems = fixtures.scenario()
+  .restaurantMenu()
+  .withPizzas(['Margherita', 'Pepperoni', 'Hawaiian'])
+  .withSalads(['Caesar', 'Greek'])
+  .withDesserts(['Tiramisu', 'Gelato'])
+  .build();

@@ -1,0 +1,9 @@
+I want to refactor the fixture logic of this codebase. The problem I have with the current approach is that the same fixtures are used in all test, creating some tight-coupling which tend to make tests depend on each others.
+
+I would like you to make some design proposals for a new fixture approach. Here are some constraints for this:
+* Each test should only create the data it's interested in
+* Do not use random data generation logic. Rely on some hardcoded data samples, possibly with some dynamic update of this data depending on the needs
+* As a test developer, I should be able to instantiate a single entity if I need to, and I must be able to override the default values
+* As a test developer, I should be able to instantiate several entities at once with a meaningful business association
+
+For now, I'm not interested in the actual implementation of this system. I just want to work on the test developer perspective and see what the actual interface could look like to create these fixtures in a test
