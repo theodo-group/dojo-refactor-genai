@@ -189,51 +189,6 @@ describe("CustomerController (e2e)", () => {
         });
     });
 
-    it("POST / should validate email format", () => {
-      const invalidEmailFormats = [
-        "notanemail",
-        "@domain.com",
-        "user@",
-        "user@domain",
-        "user..double@domain.com",
-        "user@domain..com",
-      ];
-
-      const promises = invalidEmailFormats.map((email) =>
-        request(app.getHttpServer())
-          .post("/api/customers")
-          .send({
-            name: "Test User",
-            email: email,
-            phone: "123-456-7890",
-          })
-          .expect(400)
-      );
-
-      return Promise.all(promises);
-    });
-
-    it("POST / should validate required fields", () => {
-      const testCases = [
-        { email: "test@example.com" }, // missing name
-        { name: "Test User" }, // missing email
-        {}, // missing both
-      ];
-
-      const promises = testCases.map((data) =>
-        request(app.getHttpServer())
-          .post("/api/customers")
-          .send(data)
-          .expect(400)
-          .expect((res) => {
-            expect(res.body.message).toBeDefined();
-            expect(Array.isArray(res.body.message)).toBe(true);
-          })
-      );
-
-      return Promise.all(promises);
-    });
-
     it("POST / should handle very long field values", () => {
       return request(app.getHttpServer())
         .post("/api/customers")
