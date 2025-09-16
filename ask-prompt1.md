@@ -1,0 +1,1 @@
+Tu es un développeur Web senior, crée un plan d'implémentation sous format .md à destination d'un développeur junior qui fera l'implémentation dans le but de migrer le premier test en respectant le standard donné.

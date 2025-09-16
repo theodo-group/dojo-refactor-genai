@@ -6,6 +6,53 @@ import { GlobalFixtures } from "../fixtures/global-fixtures";
 import { CreateOrderDto } from "../../src/order/dto/create-order.dto";
 import { OrderStatus } from "../../src/entities/order.entity";
 
+describe("endpoint GET /orders", () => {
+  let app: INestApplication;
+  let fixtures: GlobalFixtures;
+
+  beforeAll(async () => {
+    const moduleFixture: TestingModule = await Test.createTestingModule({
+      imports: [AppModule],
+    }).compile();
+
+    app = moduleFixture.createNestApplication();
+    app.useGlobalPipes(
+      new ValidationPipe({
+        whitelist: true,
+        transform: true,
+        forbidNonWhitelisted: true,
+      })
+    );
+    app.setGlobalPrefix("api");
+    await app.init();
+
+    // Initialize fixtures
+    fixtures = new GlobalFixtures(app);
+    await fixtures.load();
+  });
+
+  beforeEach(async () => await fixtures.clear());
+
+  afterAll(async () => {
+    await fixtures.clear();
+    await app.close();
+  });
+
+  it("should return all orders", async () => {
+    // ARRANGE
+    const orders = await fixtures.createOrdersListFixture();
+
+    // ACT
+    return request(app.getHttpServer())
+      .get("/api/orders")
+      .expect(200)
+      .expect((res) => {
+        // ASSERT
+        GlobalFixtures.assertOrdersListResponse(res.body, orders);
+      });
+  });
+});
+
 describe("OrderController (e2e)", () => {
   let app: INestApplication;
   let fixtures: GlobalFixtures;
@@ -37,23 +84,6 @@ describe("OrderController (e2e)", () => {
   });
 
   describe("/api/orders", () => {
-    it("GET / should return all orders", () => {
-      return request(app.getHttpServer())
-        .get("/api/orders")
-        .expect(200)
-        .expect((res) => {
-          expect(Array.isArray(res.body)).toBe(true);
-          expect(res.body.length).toBe(fixtures.getOrders().length);
-
-          // Check if each order has customer and products
-          res.body.forEach((order) => {
-            expect(order.customer).toBeDefined();
-            expect(order.products).toBeDefined();
-            expect(Array.isArray(order.products)).toBe(true);
-          });
-        });
-    });
-
     it("GET /?status=pending should filter orders by status", () => {
       return request(app.getHttpServer())
         .get("/api/orders?status=pending")

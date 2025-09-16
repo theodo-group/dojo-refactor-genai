@@ -141,7 +141,7 @@ export class GlobalFixtures {
     twentyDaysAgo.setDate(now.getDate() - 20);
     
     const twentyFiveDaysAgo = new Date(now);
-    twentyFiveDaysAgo.setDate(now.getDate() - 25);
+    twentyFiveAgo.setDate(now.getDate() - 25);
 
     const orders = [
       this.orderRepository.create({
@@ -180,5 +180,65 @@ export class GlobalFixtures {
     ];
     
     return await this.orderRepository.save(orders);
+  }
+
+  /**
+   * Prépare une liste d'ordres avec clients et produits pour le test GET /api/orders
+   * Retourne la liste des ordres créés
+   */
+  async createOrdersListFixture(): Promise<Order[]> {
+    await this.clear();
+    this.customers = await this.createCustomers();
+    this.products = await this.createProducts();
+    // Création de 3 ordres variés
+    const orders = [
+      this.orderRepository.create({
+        customer: this.customers[0],
+        products: [this.products[0], this.products[1]],
+        totalAmount: 27.98,
+        status: OrderStatus.DELIVERED,
+        notes: 'Commande test 1',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }),
+      this.orderRepository.create({
+        customer: this.customers[1],
+        products: [this.products[2]],
+        totalAmount: 8.99,
+        status: OrderStatus.PREPARING,
+        notes: 'Commande test 2',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }),
+      this.orderRepository.create({
+        customer: this.customers[2],
+        products: [this.products[3], this.products[4]],
+        totalAmount: 12.98,
+        status: OrderStatus.READY,
+        notes: 'Commande test 3',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }),
+    ];
+    this.orders = await this.orderRepository.save(orders);
+    return this.orders;
+  }
+
+  /**
+   * Compare la liste d'ordres retournée par l'API avec la fixture attendue
+   */
+  static assertOrdersListResponse(apiOrders: any[], expectedOrders: any[]): void {
+    expect(Array.isArray(apiOrders)).toBe(true);
+    expect(apiOrders.length).toBe(expectedOrders.length);
+    apiOrders.forEach((order, idx) => {
+      expect(order.customer).toBeDefined();
+      expect(order.products).toBeDefined();
+      expect(Array.isArray(order.products)).toBe(true);
+      expect(order.customer.id).toBe(expectedOrders[idx].customer.id);
+      expect(order.products.length).toBe(expectedOrders[idx].products.length);
+      // On peut ajouter d'autres vérifications si besoin (notes, totalAmount, status...)
+      expect(order.status).toBe(expectedOrders[idx].status);
+      expect(order.totalAmount).toBeCloseTo(expectedOrders[idx].totalAmount);
+    });
   }
 }
