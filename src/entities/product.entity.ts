@@ -1,18 +1,25 @@
-import { Entity, Column, PrimaryGeneratedColumn, ManyToMany, CreateDateColumn, UpdateDateColumn } from 'typeorm';
-import { Order } from './order.entity';
+import {
+  Entity,
+  Column,
+  PrimaryGeneratedColumn,
+  ManyToMany,
+  CreateDateColumn,
+  UpdateDateColumn,
+} from "typeorm";
+import { Order } from "./order.entity";
 
-@Entity('products')
+@Entity("products")
 export class Product {
-  @PrimaryGeneratedColumn('uuid')
+  @PrimaryGeneratedColumn("uuid")
   id: string;
 
   @Column()
   name: string;
 
-  @Column('text')
+  @Column("text")
   description: string;
 
-  @Column('decimal', { precision: 10, scale: 2 })
+  @Column("decimal", { precision: 10, scale: 2 })
   price: number;
 
   @Column({ default: true })
@@ -21,7 +28,7 @@ export class Product {
   @Column({ nullable: true })
   category: string;
 
-  @ManyToMany(() => Order, order => order.products)
+  @ManyToMany(() => Order, (order) => order.products)
   orders: Order[];
 
   @CreateDateColumn()
