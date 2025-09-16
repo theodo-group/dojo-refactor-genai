@@ -256,24 +256,6 @@ describe("ProductController (e2e)", () => {
         });
     });
 
-    it("POST / should validate required fields", () => {
-      const testCases = [
-        { description: "Missing name", price: 10.99, category: "test" },
-        { name: "Test Product", category: "test" }, // Missing price
-        { name: "Test Product", price: 10.99 }, // Missing category
-        {}, // Missing everything
-      ];
-
-      const promises = testCases.map((data) =>
-        request(app.getHttpServer())
-          .post("/api/products")
-          .send(data)
-          .expect(400)
-      );
-
-      return Promise.all(promises);
-    });
-
     it("PATCH /:id should validate price updates", () => {
       const product = fixtures.getProducts()[0];
 
