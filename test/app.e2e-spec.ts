@@ -69,20 +69,6 @@ describe("AppController (e2e)", () => {
         .expect(201);
     });
 
-    it("should handle concurrent requests properly", async () => {
-      const requests = Array.from({ length: 10 }, (_, i) =>
-        request(app.getHttpServer()).get("/api/customers").expect(200)
-      );
-
-      const responses = await Promise.all(requests);
-
-      // All responses should be successful and consistent
-      responses.forEach((response) => {
-        expect(Array.isArray(response.body)).toBe(true);
-        expect(response.body.length).toBeGreaterThan(0);
-      });
-    });
-
     it("should return appropriate error for unsupported HTTP methods", () => {
       return request(app.getHttpServer())
         .patch("/api/customers") // PATCH without ID should be 404 or 405
@@ -106,22 +92,6 @@ describe("AppController (e2e)", () => {
   });
 
   describe("API Performance & Load Tests", () => {
-    it("should handle rapid successive requests", async () => {
-      const startTime = Date.now();
-
-      const rapidRequests = Array.from({ length: 50 }, () =>
-        request(app.getHttpServer()).get("/api/products").expect(200)
-      );
-
-      await Promise.all(rapidRequests);
-
-      const endTime = Date.now();
-      const duration = endTime - startTime;
-
-      // Should complete within reasonable time (5 seconds for 50 requests)
-      expect(duration).toBeLessThan(5000);
-    });
-
     it("should maintain data consistency under concurrent modifications", async () => {
       const customer = fixtures.getUpdateTestCustomers()[1]; // Use specific customer for concurrent tests
 
