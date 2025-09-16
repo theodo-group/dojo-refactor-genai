@@ -5,6 +5,7 @@ import { AppModule } from "../../src/app.module";
 import { GlobalFixtures } from "../fixtures/global-fixtures";
 import { CreateOrderDto } from "../../src/order/dto/create-order.dto";
 import { OrderStatus } from "../../src/entities/order.entity";
+import { before } from "node:test";
 
 describe("OrderController (e2e)", () => {
   let app: INestApplication;
@@ -37,13 +38,27 @@ describe("OrderController (e2e)", () => {
   });
 
   describe("/api/orders", () => {
-    it("GET / should return all orders", () => {
+    const scenario: Fixtures = {
+      customers: [customer('customer')],
+      products: [product('pizza', {price: 12.99}), product('soda')],
+      orders: [order('customer', ['pizza', 'soda'], {status: 'pending'})]
+    };
+
+    beforeEach(async () => {
+      await fixtures.apply(scenario);
+    })
+
+    afterEach(async () => {
+      await fixtures.clear();
+    })
+
+    it("GET / should return all orders", async () => {
       return request(app.getHttpServer())
         .get("/api/orders")
         .expect(200)
         .expect((res) => {
           expect(Array.isArray(res.body)).toBe(true);
-          expect(res.body.length).toBe(fixtures.getOrders().length);
+          expect(res.body.length).toBe(fixtures.orders.length);
 
           // Check if each order has customer and products
           res.body.forEach((order) => {
@@ -55,20 +70,18 @@ describe("OrderController (e2e)", () => {
     });
 
     it("GET /?status=pending should filter orders by status", () => {
+      const fixtures = await given(scenario);
+
       return request(app.getHttpServer())
         .get("/api/orders?status=pending")
         .expect(200)
         .expect((res) => {
           expect(Array.isArray(res.body)).toBe(true);
-          res.body.forEach((order) => {
-            expect(order.status).toBe("pending");
-          });
+          res.body.toEqual(fixtures.orders)
         });
     });
 
     it("GET /:id should return order by id", () => {
-      const order = fixtures.getOrders()[0];
-
       return request(app.getHttpServer())
         .get(`/api/orders/${order.id}`)
         .expect(200)
@@ -95,11 +108,13 @@ describe("OrderController (e2e)", () => {
     });
 
     it("POST / should create a new order", () => {
-      const customer = fixtures.getCustomers()[0];
-      const products = fixtures.getProducts().slice(0, 2);
+      const { customers, products } = await given({
+        ...scenario,
+        orders: []
+      });
 
       const createOrderDto: CreateOrderDto = {
-        customerId: customer.id,
+        customerId: customers[0].id,
         productIds: products.map((p) => p.id),
         totalAmount: 30.5,
         notes: "Test order notes",
