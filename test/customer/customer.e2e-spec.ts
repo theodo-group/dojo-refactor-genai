@@ -2,13 +2,14 @@ import { Test, TestingModule } from "@nestjs/testing";
 import { INestApplication, ValidationPipe } from "@nestjs/common";
 import * as request from "supertest";
 import { AppModule } from "../../src/app.module";
-import { GlobalFixtures } from "../fixtures/global-fixtures";
+import { createFixtures, FixtureFactory } from "../fixtures";
 import { CreateCustomerDto } from "../../src/customer/dto/create-customer.dto";
 import { UpdateCustomerDto } from "../../src/customer/dto/update-customer.dto";
+import { OrderStatus } from "../../src/entities/order.entity";
 
 describe("CustomerController (e2e)", () => {
   let app: INestApplication;
-  let fixtures: GlobalFixtures;
+  let fixtures: FixtureFactory;
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -27,27 +28,46 @@ describe("CustomerController (e2e)", () => {
     await app.init();
 
     // Initialize fixtures
-    fixtures = new GlobalFixtures(app);
-    await fixtures.load();
+    fixtures = createFixtures(app);
+  });
+
+  beforeEach(async () => {
+    // Clean up before each test to ensure isolation
+    await fixtures.cleanup();
   });
 
   afterAll(async () => {
-    if (fixtures) {
-      await fixtures.clear();
-    }
-    if (app) {
-      await app.close();
-    }
+    await fixtures.cleanup();
+    await app.close();
   });
 
   describe("/api/customers", () => {
-    it("GET / should return all active customers", () => {
+    it("GET / should return all active customers", async () => {
+      // Create some test customers
+      const customer1 = await fixtures
+        .customer()
+        .withName("John Doe")
+        .withEmail("john@example.com")
+        .build();
+
+      const customer2 = await fixtures
+        .customer()
+        .withName("Jane Smith")
+        .withEmail("jane@example.com")
+        .build();
+
+      const customer3 = await fixtures
+        .customer()
+        .withName("Bob Johnson")
+        .withEmail("bob@example.com")
+        .build();
+
       return request(app.getHttpServer())
         .get("/api/customers")
         .expect(200)
         .expect((res) => {
           expect(Array.isArray(res.body)).toBe(true);
-          expect(res.body.length).toBe(fixtures.getCustomers().length);
+          expect(res.body.length).toBe(3);
 
           // Check if all customers are returned
           const emails = res.body.map((customer) => customer.email);
@@ -57,8 +77,13 @@ describe("CustomerController (e2e)", () => {
         });
     });
 
-    it("GET /:id should return customer by id", () => {
-      const customer = fixtures.getCustomers()[0];
+    it("GET /:id should return customer by id", async () => {
+      // Create a test customer
+      const customer = await fixtures
+        .customer()
+        .withName("John Doe")
+        .withEmail("john@example.com")
+        .build();
 
       return request(app.getHttpServer())
         .get(`/api/customers/${customer.id}`)
@@ -109,8 +134,15 @@ describe("CustomerController (e2e)", () => {
         .expect(400);
     });
 
-    it("PATCH /:id should update a customer", () => {
-      const customer = fixtures.getUpdateTestCustomers()[0]; // Use specific update test customer
+    it("PATCH /:id should update a customer", async () => {
+      // Create a customer for update testing
+      const customer = await fixtures
+        .customer()
+        .withName("Update Test Customer")
+        .withEmail("update.test@example.com")
+        .withPhone("333-333-3333")
+        .build();
+
       const updateCustomerDto: UpdateCustomerDto = {
         name: "Updated Name",
         phone: "updated-phone",
@@ -129,8 +161,13 @@ describe("CustomerController (e2e)", () => {
         });
     });
 
-    it("DELETE /:id should soft delete a customer", () => {
-      const customer = fixtures.getUpdateTestCustomers()[2]; // Use specific delete test customer
+    it("DELETE /:id should soft delete a customer", async () => {
+      // Create a customer for delete testing
+      const customer = await fixtures
+        .customer()
+        .withName("Delete Test Customer")
+        .withEmail("delete.test@example.com")
+        .build();
 
       return request(app.getHttpServer())
         .delete(`/api/customers/${customer.id}`)
@@ -148,8 +185,14 @@ describe("CustomerController (e2e)", () => {
     });
 
     // NEW COMPREHENSIVE TESTS
-    it("POST / should reject duplicate email addresses", () => {
-      const existingCustomer = fixtures.getCustomers()[0];
+    it("POST / should reject duplicate email addresses", async () => {
+      // Create an existing customer first
+      const existingCustomer = await fixtures
+        .customer()
+        .withName("Existing Customer")
+        .withEmail("existing@example.com")
+        .build();
+
       const duplicateEmailDto: CreateCustomerDto = {
         name: "Duplicate Test",
         email: existingCustomer.email, // Using existing email
@@ -222,9 +265,19 @@ describe("CustomerController (e2e)", () => {
         .expect(400); // Should reject due to length constraints
     });
 
-    it("PATCH /:id should prevent email updates to existing emails", () => {
-      const customer1 = fixtures.getCustomers()[0];
-      const customer2 = fixtures.getCustomers()[1];
+    it("PATCH /:id should prevent email updates to existing emails", async () => {
+      // Create two customers for this test
+      const customer1 = await fixtures
+        .customer()
+        .withName("Customer One")
+        .withEmail("customer1@example.com")
+        .build();
+
+      const customer2 = await fixtures
+        .customer()
+        .withName("Customer Two")
+        .withEmail("customer2@example.com")
+        .build();
 
       return request(app.getHttpServer())
         .patch(`/api/customers/${customer1.id}`)
@@ -235,8 +288,14 @@ describe("CustomerController (e2e)", () => {
         });
     });
 
-    it("PATCH /:id should allow partial updates", () => {
-      const customer = fixtures.getPartialUpdateTestCustomer(); // Use specific customer for partial updates
+    it("PATCH /:id should allow partial updates", async () => {
+      // Create a customer for partial update testing
+      const customer = await fixtures
+        .customer()
+        .withName("Partial Update Customer")
+        .withEmail("partial.update@example.com")
+        .build();
+
       const originalEmail = customer.email;
       const originalName = customer.name;
 
@@ -292,7 +351,12 @@ describe("CustomerController (e2e)", () => {
     });
 
     it("DELETE /:id should not permanently delete customer data", async () => {
-      const customer = fixtures.getCustomers()[2];
+      // Create a customer for deletion testing
+      const customer = await fixtures
+        .customer()
+        .withName("Delete Test Customer")
+        .withEmail("deletetest@example.com")
+        .build();
 
       // Soft delete the customer
       await request(app.getHttpServer())
@@ -320,7 +384,12 @@ describe("CustomerController (e2e)", () => {
     });
 
     it("PATCH /:id should update customer timestamps", async () => {
-      const customer = fixtures.getCustomers()[0];
+      // Create a customer for timestamp testing
+      const customer = await fixtures
+        .customer()
+        .withName("Timestamp Test Customer")
+        .withEmail("timestamp@example.com")
+        .build();
       const originalUpdatedAt = customer.updatedAt;
 
       // Wait a bit to ensure timestamp difference
@@ -396,7 +465,12 @@ describe("CustomerController (e2e)", () => {
     });
 
     it("should handle customer reactivation after soft delete", async () => {
-      const customer = fixtures.getCustomers()[3];
+      // Create a customer for reactivation testing
+      const customer = await fixtures
+        .customer()
+        .withName("Reactivation Test Customer")
+        .withEmail("reactivation@example.com")
+        .build();
 
       // Soft delete
       await request(app.getHttpServer())

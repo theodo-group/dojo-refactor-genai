@@ -2,13 +2,13 @@ import { Test, TestingModule } from "@nestjs/testing";
 import { INestApplication, ValidationPipe } from "@nestjs/common";
 import * as request from "supertest";
 import { AppModule } from "../../src/app.module";
-import { GlobalFixtures } from "../fixtures/global-fixtures";
+import { createFixtures, FixtureFactory } from "../fixtures";
 import { CreateProductDto } from "../../src/product/dto/create-product.dto";
 import { UpdateProductDto } from "../../src/product/dto/update-product.dto";
 
 describe("ProductController (e2e)", () => {
   let app: INestApplication;
-  let fixtures: GlobalFixtures;
+  let fixtures: FixtureFactory;
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -27,27 +27,32 @@ describe("ProductController (e2e)", () => {
     await app.init();
 
     // Initialize fixtures
-    fixtures = new GlobalFixtures(app);
-    await fixtures.load();
+    fixtures = createFixtures(app);
+  });
+
+  beforeEach(async () => {
+    // Clean up before each test to ensure isolation
+    await fixtures.cleanup();
   });
 
   afterAll(async () => {
-    if (fixtures) {
-      await fixtures.clear();
-    }
-    if (app) {
-      await app.close();
-    }
+    await fixtures.cleanup();
+    await app.close();
   });
 
   describe("/api/products", () => {
-    it("GET / should return all available products", () => {
+    it("GET / should return all available products", async () => {
+      // Create some test products
+      await fixtures.product().asPizza("Margherita Pizza").build();
+      await fixtures.product().asSalad("Caesar Salad").build();
+      await fixtures.product().asDessert("Tiramisu").build();
+
       return request(app.getHttpServer())
         .get("/api/products")
         .expect(200)
         .expect((res) => {
           expect(Array.isArray(res.body)).toBe(true);
-          expect(res.body.length).toBeGreaterThanOrEqual(5); // At least the original 5 products
+          expect(res.body.length).toBeGreaterThanOrEqual(3);
 
           // Check if products data is correct
           const productNames = res.body.map((product) => product.name);
@@ -56,7 +61,12 @@ describe("ProductController (e2e)", () => {
         });
     });
 
-    it("GET /?category=pizza should filter products by category", () => {
+    it("GET /?category=pizza should filter products by category", async () => {
+      // Create some test products in different categories
+      await fixtures.product().asPizza("Margherita Pizza").build();
+      await fixtures.product().asPizza("Pepperoni Pizza").build();
+      await fixtures.product().asSalad("Caesar Salad").build();
+
       return request(app.getHttpServer())
         .get("/api/products?category=pizza")
         .expect(200)
