@@ -275,4 +275,64 @@ describe("LoyaltyService (e2e)", () => {
       expect(tierInfo.currentTier).toBe(stats.currentTier);
     });
   });
+
+  describe("Tier and Discount Logic", () => {
+    it("should prioritize spending-based discount and set Platinum tier when spending >= $500 with few orders", async () => {
+      const customer = fixtures.getCustomers()[8]; // Concurrent Test Customer (no prior orders)
+      const expensiveProduct = fixtures.getProducts()[4]; // Tiramisu 7.99
+
+      const quantity = 70; // 70 * 7.99 = 559.30
+      const productIds = Array.from({ length: quantity }, () => expensiveProduct.id);
+      const totalAmount = parseFloat((expensiveProduct.price * quantity).toFixed(2));
+
+      const createOrderDto: CreateOrderDto = {
+        customerId: customer.id,
+        productIds,
+        totalAmount,
+        notes: "High spending single order",
+      };
+
+      await orderService.create(createOrderDto);
+
+      const tierInfo = await loyaltyService.calculateCustomerTier(customer.id);
+
+      expect(tierInfo.currentTier).toBe("Platinum");
+      expect(tierInfo.discountRate).toBeCloseTo(0.12, 5); // spending-based 12% should apply over order-based 0%
+      // Spending already at top tier; next tier requirement only applies for orders
+      expect(tierInfo.nextTierRequirement?.spending).toBeUndefined();
+      expect(tierInfo.nextTierRequirement?.orders).toBeGreaterThan(0);
+    });
+
+    it("should ignore cancelled orders when calculating next order discount (no discount applied)", async () => {
+      const customer = fixtures.getCustomers()[5]; // Update Test Customer
+      const product = fixtures.getProducts()[0]; // Margherita 12.99
+
+      // Create 5 orders, then cancel them all
+      const orders = [] as Array<{ id: string }>;
+      for (let i = 0; i < 5; i++) {
+        const dto: CreateOrderDto = {
+          customerId: customer.id,
+          productIds: [product.id],
+          totalAmount: parseFloat(product.price.toFixed(2)),
+          notes: `Temp order ${i + 1}`,
+        };
+        const order = await orderService.create(dto);
+        orders.push(order);
+      }
+
+      // Cancel all the created orders
+      for (const o of orders) {
+        await orderService.remove(o.id);
+      }
+
+      // Since all recent orders are cancelled, discount rate should be 0
+      const amount = 100;
+      const discounted = await loyaltyService.calculateNextOrderAmount(
+        customer.id,
+        amount
+      );
+
+      expect(discounted).toBe(amount);
+    });
+  });
 });
