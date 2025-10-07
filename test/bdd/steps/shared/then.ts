@@ -93,6 +93,25 @@ export const thenResponseBodyContainsItemWithProperty = (
 };
 
 /**
+ * Then step: Check response body array does NOT contain item with property value
+ * Example: Then the response body should not contain product with name "DeletedProduct"
+ */
+export const thenResponseBodyDoesNotContainItemWithProperty = (
+  then: DefineStepFunction,
+  context: Context
+) => {
+  then(
+    /^the response body should not contain (?:product|customer|order) with (\w+) "([^"]*)"$/,
+    (property: string, value: string) => {
+      const body = context.getResponseBody();
+      expect(Array.isArray(body)).toBe(true);
+      const found = body.find((item: any) => item[property] === value);
+      expect(found).toBeUndefined();
+    }
+  );
+};
+
+/**
  * Then step: Check response message contains text
  * Example: Then the response message should contain "already exists"
  */
