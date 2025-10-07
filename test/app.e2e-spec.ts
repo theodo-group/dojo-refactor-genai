@@ -2,11 +2,15 @@ import { Test, TestingModule } from "@nestjs/testing";
 import { INestApplication, ValidationPipe } from "@nestjs/common";
 import * as request from "supertest";
 import { AppModule } from "./../src/app.module";
-import { GlobalFixtures } from "./fixtures/global-fixtures";
+import { DataSource } from "typeorm";
+import { TestCleanup } from "./helpers/test-cleanup";
+import { CustomerTestBuilder } from "./helpers/customer-test.builder";
 
 describe("AppController (e2e)", () => {
   let app: INestApplication;
-  let fixtures: GlobalFixtures;
+  let dataSource: DataSource;
+  let cleanup: TestCleanup;
+  let customerBuilder: CustomerTestBuilder;
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -24,15 +28,16 @@ describe("AppController (e2e)", () => {
     app.setGlobalPrefix("api");
     await app.init();
 
-    // Initialize fixtures
-    fixtures = new GlobalFixtures(app);
-    await fixtures.load();
+    dataSource = moduleFixture.get<DataSource>(DataSource);
+    cleanup = new TestCleanup(dataSource);
+    customerBuilder = new CustomerTestBuilder(app);
+  });
+
+  beforeEach(async () => {
+    await cleanup.clearDatabase();
   });
 
   afterAll(async () => {
-    if (fixtures) {
-      await fixtures.clear();
-    }
     if (app) {
       await app.close();
     }
@@ -93,7 +98,10 @@ describe("AppController (e2e)", () => {
 
   describe("API Performance & Load Tests", () => {
     it("should maintain data consistency under concurrent modifications", async () => {
-      const customer = fixtures.getUpdateTestCustomers()[1]; // Use specific customer for concurrent tests
+      // Create a fresh customer for this test
+      const customer = await customerBuilder.createBasicCustomer({
+        name: "Concurrent Test Customer",
+      });
 
       // Create multiple concurrent update requests
       const updates = Array.from({ length: 5 }, (_, i) =>

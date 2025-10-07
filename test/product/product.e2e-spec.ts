@@ -1,14 +1,26 @@
 import { Test, TestingModule } from "@nestjs/testing";
 import { INestApplication, ValidationPipe } from "@nestjs/common";
 import * as request from "supertest";
+import { DataSource, Repository } from "typeorm";
+import { getRepositoryToken } from "@nestjs/typeorm";
 import { AppModule } from "../../src/app.module";
-import { GlobalFixtures } from "../fixtures/global-fixtures";
+import { TestDataBuilder } from "../helpers/test-data-builder";
+import { TestCleanup } from "../helpers/test-cleanup";
+import { createProductDto } from "../factories/product.factory";
+import { createCustomerDto } from "../factories/customer.factory";
+import { createOrderDto } from "../factories/order.factory";
 import { CreateProductDto } from "../../src/product/dto/create-product.dto";
 import { UpdateProductDto } from "../../src/product/dto/update-product.dto";
+import { Product } from "../../src/entities/product.entity";
+import { Order, OrderStatus } from "../../src/entities/order.entity";
 
 describe("ProductController (e2e)", () => {
   let app: INestApplication;
-  let fixtures: GlobalFixtures;
+  let dataSource: DataSource;
+  let cleanup: TestCleanup;
+  let dataBuilder: TestDataBuilder;
+  let productRepository: Repository<Product>;
+  let orderRepository: Repository<Order>;
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -26,37 +38,54 @@ describe("ProductController (e2e)", () => {
     app.setGlobalPrefix("api");
     await app.init();
 
-    // Initialize fixtures
-    fixtures = new GlobalFixtures(app);
-    await fixtures.load();
+    dataSource = moduleFixture.get<DataSource>(DataSource);
+    cleanup = new TestCleanup(dataSource);
+    dataBuilder = new TestDataBuilder(app);
+    productRepository = moduleFixture.get<Repository<Product>>(getRepositoryToken(Product));
+    orderRepository = moduleFixture.get<Repository<Order>>(getRepositoryToken(Order));
+  });
+
+  beforeEach(async () => {
+    await cleanup.clearDatabase();
   });
 
   afterAll(async () => {
-    if (fixtures) {
-      await fixtures.clear();
-    }
     if (app) {
       await app.close();
     }
   });
 
   describe("/api/products", () => {
-    it("GET / should return all available products", () => {
+    it("GET / should return all available products", async () => {
+      await dataBuilder.createProducts([
+        createProductDto({ name: "Margherita Pizza", category: "pizza" }),
+        createProductDto({ name: "Caesar Salad", category: "salad" }),
+        createProductDto({ name: "Pepperoni Pizza", category: "pizza" }),
+        createProductDto({ name: "Garlic Bread", category: "appetizer" }),
+        createProductDto({ name: "Tiramisu", category: "dessert" }),
+      ]);
+
       return request(app.getHttpServer())
         .get("/api/products")
         .expect(200)
         .expect((res) => {
           expect(Array.isArray(res.body)).toBe(true);
-          expect(res.body.length).toBeGreaterThanOrEqual(5); // At least the original 5 products
+          expect(res.body.length).toBeGreaterThanOrEqual(5);
 
-          // Check if products data is correct
           const productNames = res.body.map((product) => product.name);
           expect(productNames).toContain("Margherita Pizza");
           expect(productNames).toContain("Caesar Salad");
         });
     });
 
-    it("GET /?category=pizza should filter products by category", () => {
+    it("GET /?category=pizza should filter products by category", async () => {
+      await dataBuilder.createProducts([
+        createProductDto({ name: "Margherita Pizza", category: "pizza" }),
+        createProductDto({ name: "Pepperoni Pizza", category: "pizza" }),
+        createProductDto({ name: "Caesar Salad", category: "salad" }),
+        createProductDto({ name: "Tiramisu", category: "dessert" }),
+      ]);
+
       return request(app.getHttpServer())
         .get("/api/products?category=pizza")
         .expect(200)
@@ -72,8 +101,10 @@ describe("ProductController (e2e)", () => {
         });
     });
 
-    it("GET /:id should return product by id", () => {
-      const product = fixtures.getProducts()[0];
+    it("GET /:id should return product by id", async () => {
+      const product = await dataBuilder.createProduct(
+        createProductDto({ name: "Test Product", price: 12.99 })
+      );
 
       return request(app.getHttpServer())
         .get(`/api/products/${product.id}`)
@@ -86,7 +117,7 @@ describe("ProductController (e2e)", () => {
     });
 
     it("POST / should create a new product", () => {
-      const createProductDto: CreateProductDto = {
+      const createDto: CreateProductDto = {
         name: "Test Product",
         description: "This is a test product",
         price: 9.99,
@@ -95,45 +126,46 @@ describe("ProductController (e2e)", () => {
 
       return request(app.getHttpServer())
         .post("/api/products")
-        .send(createProductDto)
+        .send(createDto)
         .expect(201)
         .expect((res) => {
-          expect(res.body.name).toBe(createProductDto.name);
-          expect(res.body.description).toBe(createProductDto.description);
-          expect(parseFloat(res.body.price)).toBe(createProductDto.price);
-          expect(res.body.category).toBe(createProductDto.category);
+          expect(res.body.name).toBe(createDto.name);
+          expect(res.body.description).toBe(createDto.description);
+          expect(parseFloat(res.body.price)).toBe(createDto.price);
+          expect(res.body.category).toBe(createDto.category);
           expect(res.body.isAvailable).toBe(true);
         });
     });
 
-    it("PATCH /:id should update a product", () => {
-      const product = fixtures.getProducts()[0];
-      const updateProductDto: UpdateProductDto = {
+    it("PATCH /:id should update a product", async () => {
+      const product = await dataBuilder.createProduct(
+        createProductDto({ name: "Original Name", description: "Original description", price: 10.99 })
+      );
+
+      const updateDto: UpdateProductDto = {
         name: "Updated Product Name",
         price: 19.99,
       };
 
       return request(app.getHttpServer())
         .patch(`/api/products/${product.id}`)
-        .send(updateProductDto)
+        .send(updateDto)
         .expect(200)
         .expect((res) => {
           expect(res.body.id).toBe(product.id);
-          expect(res.body.name).toBe(updateProductDto.name);
-          expect(parseFloat(res.body.price)).toBe(updateProductDto.price);
-          // Description should remain unchanged
+          expect(res.body.name).toBe(updateDto.name);
+          expect(parseFloat(res.body.price)).toBe(updateDto.price);
           expect(res.body.description).toBe(product.description);
         });
     });
 
-    it("DELETE /:id should soft delete a product", () => {
-      const product = fixtures.getDeletableProducts()[0]; // Use product specifically not in orders
+    it("DELETE /:id should soft delete a product", async () => {
+      const product = await dataBuilder.createProduct(createProductDto());
 
       return request(app.getHttpServer())
         .delete(`/api/products/${product.id}`)
         .expect(204)
         .then(() => {
-          // Verify product is no longer in the available list
           return request(app.getHttpServer())
             .get("/api/products")
             .expect(200)
@@ -144,12 +176,11 @@ describe("ProductController (e2e)", () => {
         });
     });
 
-    // NEW COMPREHENSIVE TESTS
     it("POST / should reject products with negative or zero prices", () => {
       const invalidPriceDto: CreateProductDto = {
         name: "Invalid Price Product",
         description: "This product has invalid price",
-        price: -5.99, // Invalid negative price
+        price: -5.99,
         category: "test",
       };
 
@@ -162,19 +193,31 @@ describe("ProductController (e2e)", () => {
         });
     });
 
-    it("GET /?available=false should return unavailable products", () => {
+    it("GET /?available=false should return unavailable products", async () => {
+      await dataBuilder.createProducts([
+        createProductDto({ name: "Available Product" }),
+        createProductDto({ name: "Another Available" }),
+      ]);
+
+      const unavailableProduct = productRepository.create({
+        name: "Seasonal Special",
+        description: "Limited time offer - currently unavailable",
+        price: 15.99,
+        category: "special",
+        isAvailable: false,
+      });
+      await productRepository.save(unavailableProduct);
+
       return request(app.getHttpServer())
         .get("/api/products?available=false")
         .expect(200)
         .expect((res) => {
           expect(Array.isArray(res.body)).toBe(true);
 
-          // All returned products should be unavailable
           res.body.forEach((product) => {
             expect(product.isAvailable).toBe(false);
           });
 
-          // Should find the "Seasonal Special" unavailable product
           const seasonalProduct = res.body.find(
             (p) => p.name === "Seasonal Special"
           );
@@ -187,7 +230,7 @@ describe("ProductController (e2e)", () => {
       const zeroPriceDto: CreateProductDto = {
         name: "Free Product",
         description: "This product is free",
-        price: 0, // Zero price should be rejected
+        price: 0,
         category: "free",
       };
 
@@ -207,7 +250,14 @@ describe("ProductController (e2e)", () => {
         });
     });
 
-    it("GET /?sort=price_asc should return products sorted by price ascending", () => {
+    it("GET /?sort=price_asc should return products sorted by price ascending", async () => {
+      await dataBuilder.createProducts([
+        createProductDto({ price: 15.99 }),
+        createProductDto({ price: 8.99 }),
+        createProductDto({ price: 22.50 }),
+        createProductDto({ price: 10.00 }),
+      ]);
+
       return request(app.getHttpServer())
         .get("/api/products?sort=price_asc")
         .expect(200)
@@ -215,7 +265,6 @@ describe("ProductController (e2e)", () => {
           expect(Array.isArray(res.body)).toBe(true);
           expect(res.body.length).toBeGreaterThan(1);
 
-          // Check if sorted by price ascending
           for (let i = 1; i < res.body.length; i++) {
             const currentPrice = parseFloat(res.body[i].price);
             const previousPrice = parseFloat(res.body[i - 1].price);
@@ -224,7 +273,14 @@ describe("ProductController (e2e)", () => {
         });
     });
 
-    it("GET /?sort=price_desc should return products sorted by price descending", () => {
+    it("GET /?sort=price_desc should return products sorted by price descending", async () => {
+      await dataBuilder.createProducts([
+        createProductDto({ price: 15.99 }),
+        createProductDto({ price: 8.99 }),
+        createProductDto({ price: 22.50 }),
+        createProductDto({ price: 10.00 }),
+      ]);
+
       return request(app.getHttpServer())
         .get("/api/products?sort=price_desc")
         .expect(200)
@@ -232,7 +288,6 @@ describe("ProductController (e2e)", () => {
           expect(Array.isArray(res.body)).toBe(true);
           expect(res.body.length).toBeGreaterThan(1);
 
-          // Check if sorted by price descending
           for (let i = 1; i < res.body.length; i++) {
             const currentPrice = parseFloat(res.body[i].price);
             const previousPrice = parseFloat(res.body[i - 1].price);
@@ -241,7 +296,15 @@ describe("ProductController (e2e)", () => {
         });
     });
 
-    it("GET /?price_min=10&price_max=15 should filter products by price range", () => {
+    it("GET /?price_min=10&price_max=15 should filter products by price range", async () => {
+      await dataBuilder.createProducts([
+        createProductDto({ price: 8.99 }),
+        createProductDto({ price: 12.50 }),
+        createProductDto({ price: 14.99 }),
+        createProductDto({ price: 18.00 }),
+        createProductDto({ price: 11.25 }),
+      ]);
+
       return request(app.getHttpServer())
         .get("/api/products?price_min=10&price_max=15")
         .expect(200)
@@ -259,9 +322,9 @@ describe("ProductController (e2e)", () => {
     it("POST / should validate required fields", async () => {
       const testCases = [
         { description: "Missing name", price: 10.99, category: "test" },
-        { name: "Test Product", category: "test" }, // Missing price
-        { name: "Test Product", price: 10.99 }, // Missing category
-        {}, // Missing everything
+        { name: "Test Product", category: "test" },
+        { name: "Test Product", price: 10.99 },
+        {},
       ];
 
       for (const data of testCases) {
@@ -272,13 +335,13 @@ describe("ProductController (e2e)", () => {
       }
     });
 
-    it("PATCH /:id should validate price updates", () => {
-      const product = fixtures.getProducts()[0];
+    it("PATCH /:id should validate price updates", async () => {
+      const product = await dataBuilder.createProduct(createProductDto());
 
       const invalidUpdates = [
-        { price: -10 }, // Negative price
-        { price: 0 }, // Zero price
-        { price: "not-a-number" }, // Invalid format
+        { price: -10 },
+        { price: 0 },
+        { price: "not-a-number" },
       ];
 
       const promises = invalidUpdates.map((update) =>
@@ -291,8 +354,10 @@ describe("ProductController (e2e)", () => {
       return Promise.all(promises);
     });
 
-    it("PATCH /:id should handle category changes", () => {
-      const product = fixtures.getUpdateTestProducts()[1]; // Use specific update test product
+    it("PATCH /:id should handle category changes", async () => {
+      const product = await dataBuilder.createProduct(
+        createProductDto({ name: "Test Product", category: "original" })
+      );
 
       return request(app.getHttpServer())
         .patch(`/api/products/${product.id}`)
@@ -300,11 +365,19 @@ describe("ProductController (e2e)", () => {
         .expect(200)
         .expect((res) => {
           expect(res.body.category).toBe("updated-category");
-          expect(res.body.name).toBe(product.name); // Should remain unchanged
+          expect(res.body.name).toBe(product.name);
         });
     });
 
-    it("GET /?search=pizza should search products by name", () => {
+    it("GET /?search=pizza should search products by name", async () => {
+      await dataBuilder.createProducts([
+        createProductDto({ name: "Margherita Pizza" }),
+        createProductDto({ name: "Pepperoni Pizza" }),
+        createProductDto({ name: "Hawaiian Pizza" }),
+        createProductDto({ name: "Caesar Salad" }),
+        createProductDto({ name: "Garlic Bread" }),
+      ]);
+
       return request(app.getHttpServer())
         .get("/api/products?search=pizza")
         .expect(200)
@@ -318,12 +391,23 @@ describe("ProductController (e2e)", () => {
     });
 
     it("DELETE /:id should prevent deletion of products in active orders", async () => {
-      // Use a product that's specifically in an active order
-      const productInOrder = fixtures.getProductsInActiveOrders()[0]; // Pepperoni Pizza in PREPARING order
+      const customer = await dataBuilder.createCustomer(createCustomerDto());
+      const product = await dataBuilder.createProduct(
+        createProductDto({ name: "Pepperoni Pizza" })
+      );
+
+      const order = orderRepository.create({
+        customerId: customer.id,
+        products: [product],
+        totalAmount: 14.99,
+        status: OrderStatus.PREPARING,
+        notes: "Test order",
+      });
+      await orderRepository.save(order);
 
       return request(app.getHttpServer())
-        .delete(`/api/products/${productInOrder.id}`)
-        .expect(409) // Should prevent deletion
+        .delete(`/api/products/${product.id}`)
+        .expect(409)
         .expect((res) => {
           expect(res.body.message).toContain("active orders");
         });
@@ -344,8 +428,8 @@ describe("ProductController (e2e)", () => {
         });
     });
 
-    it("PATCH /:id should update product availability", () => {
-      const product = fixtures.getProducts()[0];
+    it("PATCH /:id should update product availability", async () => {
+      const product = await dataBuilder.createProduct(createProductDto());
 
       return request(app.getHttpServer())
         .patch(`/api/products/${product.id}`)
@@ -355,7 +439,6 @@ describe("ProductController (e2e)", () => {
           expect(res.body.isAvailable).toBe(false);
         })
         .then(() => {
-          // Verify it doesn't appear in available products
           return request(app.getHttpServer())
             .get("/api/products")
             .expect(200)
@@ -366,7 +449,16 @@ describe("ProductController (e2e)", () => {
         });
     });
 
-    it("GET /?limit=3&offset=2 should paginate results", () => {
+    it("GET /?limit=3&offset=2 should paginate results", async () => {
+      await dataBuilder.createProducts([
+        createProductDto(),
+        createProductDto(),
+        createProductDto(),
+        createProductDto(),
+        createProductDto(),
+        createProductDto(),
+      ]);
+
       return request(app.getHttpServer())
         .get("/api/products?limit=3&offset=2")
         .expect(200)
@@ -382,7 +474,7 @@ describe("ProductController (e2e)", () => {
         .send({
           name: "Precision Test Product",
           description: "Testing price precision",
-          price: 12.999, // Too many decimal places
+          price: 12.999,
           category: "test",
         })
         .expect(400);
@@ -411,8 +503,14 @@ describe("ProductController (e2e)", () => {
       });
     });
 
-    it("PATCH /:id should handle partial updates without affecting other fields", () => {
-      const product = fixtures.getUpdateTestProducts()[0]; // Use specific update test product
+    it("PATCH /:id should handle partial updates without affecting other fields", async () => {
+      const product = await dataBuilder.createProduct(
+        createProductDto({
+          name: "Original Name",
+          category: "original-category",
+          description: "Original description"
+        })
+      );
       const originalName = product.name;
       const originalCategory = product.category;
 
@@ -422,20 +520,18 @@ describe("ProductController (e2e)", () => {
         .expect(200)
         .expect((res) => {
           expect(res.body.description).toBe("Updated description only");
-          expect(res.body.name).toBe(originalName); // Should remain unchanged
-          expect(res.body.category).toBe(originalCategory); // Should remain unchanged
+          expect(res.body.name).toBe(originalName);
+          expect(res.body.category).toBe(originalCategory);
         });
     });
 
     it("GET /:id should return 404 for soft-deleted products", async () => {
-      const product = fixtures.getDeletableProducts()[2]; // Use different deletable product
+      const product = await dataBuilder.createProduct(createProductDto());
 
-      // Soft delete the product
       await request(app.getHttpServer())
         .delete(`/api/products/${product.id}`)
         .expect(204);
 
-      // Should return 404 when trying to access
       return request(app.getHttpServer())
         .get(`/api/products/${product.id}`)
         .expect(404);
