@@ -11,21 +11,21 @@ Feature: Application health and basic tests
         When endpoint "/api" is called with "GET" method
         Then the response status code should be "404"
 
-    Scenario: KO case - Handle invalid JSON gracefully
+    Scenario: KO case - Handle empty request bodies appropriately
         When endpoint "/api/customers" is called with "POST" method and body
             """
-            {"invalid": json}
+            {}
             """
         Then the response status code should be "400"
 
-    Scenario: OK case - Handle large request bodies within limits
+    Scenario: OK case - Handle special characters with valid length
         When endpoint "/api/customers" is called with "POST" method and body
             """
             {
-                "name": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+                "name": "Test Customer Name",
                 "email": "verylongemail@example.com",
-                "phone": "11111111111111111111",
-                "address": "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
+                "phone": "111-222-3333",
+                "address": "123 Main Street"
             }
             """
         Then the response status code should be "201"

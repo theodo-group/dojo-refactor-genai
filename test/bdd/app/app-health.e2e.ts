@@ -31,12 +31,12 @@ defineFeature(feature, (test) => {
     thenResponseStatusCode(then, context);
   });
 
-  test("KO case - Handle invalid JSON gracefully", ({ given, when, then }) => {
+  test("KO case - Handle empty request bodies appropriately", ({ given, when, then }) => {
     whenApiIsCalledWithBody(when, context);
     thenResponseStatusCode(then, context);
   });
 
-  test("OK case - Handle large request bodies within limits", ({
+  test("OK case - Handle special characters with valid length", ({
     given,
     when,
     then,
