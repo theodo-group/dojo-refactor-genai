@@ -28,7 +28,11 @@ describe("OrderController (e2e)", () => {
 
     // Initialize fixtures
     fixtures = new GlobalFixtures(app);
-    await fixtures.load();
+  });
+
+  beforeEach(async () => {
+    // Clear data before each test to ensure test isolation
+    await fixtures.clear();
   });
 
   afterAll(async () => {
@@ -37,13 +41,18 @@ describe("OrderController (e2e)", () => {
   });
 
   describe("/api/orders", () => {
-    it("GET / should return all orders", () => {
+    it("GET / should return all orders", async () => {
+      // Create test data - 3 orders
+      await fixtures.createOrderWithStatus(OrderStatus.PENDING);
+      await fixtures.createOrderWithStatus(OrderStatus.DELIVERED);
+      await fixtures.createOrderWithStatus(OrderStatus.PREPARING);
+
       return request(app.getHttpServer())
         .get("/api/orders")
         .expect(200)
         .expect((res) => {
           expect(Array.isArray(res.body)).toBe(true);
-          expect(res.body.length).toBe(fixtures.getOrders().length);
+          expect(res.body.length).toBe(3);
 
           // Check if each order has customer and products
           res.body.forEach((order) => {
@@ -54,20 +63,27 @@ describe("OrderController (e2e)", () => {
         });
     });
 
-    it("GET /?status=pending should filter orders by status", () => {
+    it("GET /?status=pending should filter orders by status", async () => {
+      // Create test data - 2 pending orders and 1 delivered order
+      await fixtures.createOrderWithStatus(OrderStatus.PENDING);
+      await fixtures.createOrderWithStatus(OrderStatus.PENDING);
+      await fixtures.createOrderWithStatus(OrderStatus.DELIVERED);
+
       return request(app.getHttpServer())
         .get("/api/orders?status=pending")
         .expect(200)
         .expect((res) => {
           expect(Array.isArray(res.body)).toBe(true);
+          expect(res.body.length).toBe(2);
           res.body.forEach((order) => {
             expect(order.status).toBe("pending");
           });
         });
     });
 
-    it("GET /:id should return order by id", () => {
-      const order = fixtures.getOrders()[0];
+    it("GET /:id should return order by id", async () => {
+      // Create test data
+      const order = await fixtures.createOrderWithStatus(OrderStatus.PENDING);
 
       return request(app.getHttpServer())
         .get(`/api/orders/${order.id}`)
@@ -80,23 +96,33 @@ describe("OrderController (e2e)", () => {
         });
     });
 
-    it("GET /customer/:customerId should return orders for a customer", () => {
-      const customer = fixtures.getCustomers()[0];
+    it("GET /customer/:customerId should return orders for a customer", async () => {
+      // Create test data - one customer with 2 orders, another with 1 order
+      const customer1 = await fixtures.createCustomer();
+      const customer2 = await fixtures.createCustomer();
+
+      await fixtures.createOrderWithStatus(OrderStatus.PENDING, { customerId: customer1.id });
+      await fixtures.createOrderWithStatus(OrderStatus.DELIVERED, { customerId: customer1.id });
+      await fixtures.createOrderWithStatus(OrderStatus.PENDING, { customerId: customer2.id });
 
       return request(app.getHttpServer())
-        .get(`/api/orders/customer/${customer.id}`)
+        .get(`/api/orders/customer/${customer1.id}`)
         .expect(200)
         .expect((res) => {
           expect(Array.isArray(res.body)).toBe(true);
+          expect(res.body.length).toBe(2);
           res.body.forEach((order) => {
-            expect(order.customer.id).toBe(customer.id);
+            expect(order.customer.id).toBe(customer1.id);
           });
         });
     });
 
-    it("POST / should create a new order", () => {
-      const customer = fixtures.getCustomers()[0];
-      const products = fixtures.getProducts().slice(0, 2);
+    it("POST / should create a new order", async () => {
+      // Create test data
+      const customer = await fixtures.createCustomer();
+      const product1 = await fixtures.createProduct({ price: 15.0 });
+      const product2 = await fixtures.createProduct({ price: 15.5 });
+      const products = [product1, product2];
 
       const createOrderDto: CreateOrderDto = {
         customerId: customer.id,
@@ -118,10 +144,9 @@ describe("OrderController (e2e)", () => {
         });
     });
 
-    it("PATCH /:id/status should update order status", () => {
-      const order = fixtures
-        .getOrders()
-        .find((o) => o.status === OrderStatus.READY);
+    it("PATCH /:id/status should update order status", async () => {
+      // Create test data - order with READY status
+      const order = await fixtures.createOrderWithStatus(OrderStatus.READY);
       const newStatus = OrderStatus.DELIVERED;
 
       return request(app.getHttpServer())
@@ -134,10 +159,9 @@ describe("OrderController (e2e)", () => {
         });
     });
 
-    it("PATCH /:id/status should prevent invalid status transitions", () => {
-      const order = fixtures
-        .getOrders()
-        .find((o) => o.status === OrderStatus.DELIVERED);
+    it("PATCH /:id/status should prevent invalid status transitions", async () => {
+      // Create test data - delivered order cannot go back to preparing
+      const order = await fixtures.createOrderWithStatus(OrderStatus.DELIVERED);
       const newStatus = OrderStatus.PREPARING;
 
       return request(app.getHttpServer())
@@ -146,14 +170,9 @@ describe("OrderController (e2e)", () => {
         .expect(400);
     });
 
-    it("DELETE /:id should cancel an order", () => {
-      const order = fixtures
-        .getOrders()
-        .find(
-          (o) =>
-            o.status === OrderStatus.PENDING ||
-            o.status === OrderStatus.PREPARING
-        );
+    it("DELETE /:id should cancel an order", async () => {
+      // Create test data - order with PENDING status
+      const order = await fixtures.createOrderWithStatus(OrderStatus.PENDING);
 
       return request(app.getHttpServer())
         .delete(`/api/orders/${order.id}`)

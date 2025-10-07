@@ -4,6 +4,9 @@ import { Repository } from 'typeorm';
 import { Customer } from '../../src/entities/customer.entity';
 import { Product } from '../../src/entities/product.entity';
 import { Order, OrderStatus } from '../../src/entities/order.entity';
+import { CustomerBuilder } from './builders/customer.builder';
+import { ProductBuilder } from './builders/product.builder';
+import { OrderBuilder } from './builders/order.builder';
 
 export class GlobalFixtures {
   private app: INestApplication;
@@ -61,6 +64,24 @@ export class GlobalFixtures {
 
   getOrders(): Order[] {
     return this.orders;
+  }
+
+  // Builder accessors
+  get builders() {
+    return {
+      customer: () => new CustomerBuilder(),
+      product: () => new ProductBuilder(),
+      order: () => new OrderBuilder(),
+    };
+  }
+
+  // Repository accessors for builders
+  get repositories() {
+    return {
+      customer: this.customerRepository,
+      product: this.productRepository,
+      order: this.orderRepository,
+    };
   }
 
   // Customer creation
@@ -125,6 +146,88 @@ export class GlobalFixtures {
     ];
     
     return await this.productRepository.save(products);
+  }
+
+  // Factory methods for creating individual entities
+  async createCustomer(data?: Partial<Customer>): Promise<Customer> {
+    const customer = this.customerRepository.create({
+      name: data?.name ?? 'Test Customer',
+      email: data?.email ?? `test${Date.now()}@example.com`,
+      phone: data?.phone ?? '555-0000',
+      address: data?.address ?? '123 Test St',
+      ...data,
+    });
+    return await this.customerRepository.save(customer);
+  }
+
+  async createProduct(data?: Partial<Product>): Promise<Product> {
+    const product = this.productRepository.create({
+      name: data?.name ?? 'Test Product',
+      description: data?.description ?? 'Test product description',
+      price: data?.price ?? 9.99,
+      category: data?.category ?? 'test',
+      ...data,
+    });
+    return await this.productRepository.save(product);
+  }
+
+  async createOrder(
+    customerId: string,
+    productIds: string[],
+    data?: Partial<Order>
+  ): Promise<Order> {
+    const customer = await this.customerRepository.findOne({
+      where: { id: customerId },
+    });
+
+    const products = await this.productRepository.findByIds(productIds);
+
+    const order = this.orderRepository.create({
+      customer,
+      products,
+      totalAmount: data?.totalAmount ?? products.reduce((sum, p) => sum + p.price, 0),
+      status: data?.status ?? OrderStatus.PENDING,
+      notes: data?.notes,
+      createdAt: data?.createdAt,
+      updatedAt: data?.updatedAt,
+      ...data,
+    });
+
+    return await this.orderRepository.save(order);
+  }
+
+  // Convenience methods for common test scenarios
+  async createOrderWithStatus(
+    status: OrderStatus,
+    overrides?: { customerId?: string; productIds?: string[]; data?: Partial<Order> }
+  ): Promise<Order> {
+    let customerId = overrides?.customerId;
+    let productIds = overrides?.productIds;
+
+    // Create customer if not provided
+    if (!customerId) {
+      const customer = await this.createCustomer();
+      customerId = customer.id;
+    }
+
+    // Create products if not provided
+    if (!productIds || productIds.length === 0) {
+      const product = await this.createProduct();
+      productIds = [product.id];
+    }
+
+    return await this.createOrder(customerId, productIds, {
+      ...overrides?.data,
+      status,
+    });
+  }
+
+  async createPendingOrder(customerId?: string, productIds?: string[]): Promise<Order> {
+    return this.createOrderWithStatus(OrderStatus.PENDING, { customerId, productIds });
+  }
+
+  async createDeliveredOrder(customerId?: string, productIds?: string[]): Promise<Order> {
+    return this.createOrderWithStatus(OrderStatus.DELIVERED, { customerId, productIds });
   }
 
   // Order creation
