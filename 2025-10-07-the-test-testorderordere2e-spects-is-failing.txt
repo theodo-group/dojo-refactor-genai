@@ -1,0 +1,767 @@
+
+ ▐▛███▜▌   Claude Code v2.0.1
+▝▜█████▛▘  Sonnet 4.5 · API Usage Billing
+  ▘▘ ▝▝    /Users/theodo/code/theodo/dojo-refactor-genai
+
+> The test @test/order/order.e2e-spec.ts is failing because each of the tests within loads ALL fixtures in @test/fixtures/global-fixtures.ts with `fixtures.load()`. This induces 
+coupling between test fixtures. The goal is to fix the test and refactor our fixtures system to allow each test to only instantiate the data it needs. Design a plan to do this. 
+  ⎿  Read test/order/order.e2e-spec.ts (173 lines)
+  ⎿  Read test/fixtures/global-fixtures.ts (184 lines)
+
+⏺ Looking at the code, I can see the problem clearly:
+
+  The Issue:
+  - All tests share the same fixture data loaded once in beforeAll()
+  - Tests depend on specific fixture data (e.g., finding orders with status READY or DELIVERED)
+  - Some tests mutate data (status updates, deletes), which can break subsequent tests
+  - Tests are tightly coupled to the exact fixture structure
+
+  The Plan:
+
+  1. Refactor GlobalFixtures to use factory methods instead of bulk loading:
+    - Add createCustomer(overrides?) method for creating individual customers
+    - Add createProduct(overrides?) method for creating individual products
+    - Add createOrder(customerId, productIds, overrides?) method for creating individual orders
+    - Keep clear() but remove the bulk load() approach
+  2. Add a fixture builder pattern for easier test data creation:
+    - Create CustomerBuilder, ProductBuilder, OrderBuilder classes
+    - Allows fluent API: builder.withName('John').withEmail('john@test.com').build()
+    - Makes test data creation more readable and flexible
+  3. Refactor the test file:
+    - Remove fixtures.load() from beforeAll()
+    - Add beforeEach() to clear data before each test
+    - Each test creates only the data it needs using factory methods
+    - Tests become independent and self-documenting
+  4. Alternative approach for better isolation (optional enhancement):
+    - Use database transactions with rollback in afterEach()
+    - Or use separate test databases per test suite
+    - Ensures complete data isolation between tests
+  5. Update test assertions to not depend on hardcoded fixture counts:
+    - Instead of expect(res.body.length).toBe(fixtures.getOrders().length)
+    - Use more specific assertions based on what the test actually created
+
+  This will make tests:
+  - Independent: Each test creates its own data
+  - Readable: Test setup documents what data is needed
+  - Maintainable: Changes to fixtures don't break unrelated tests
+  - Fast: Only create what's needed per test
+
+> Give me a step by step plan to do execute this plan like a senior developer would. 
+
+⏺ Let me provide a detailed, step-by-step execution plan:
+
+  Step-by-Step Refactoring Plan
+
+  Phase 1: Enhance GlobalFixtures with Factory Methods (Foundation)
+
+  Step 1.1 - Add factory methods to GlobalFixtures class
+  - Add createCustomer(data?: Partial<Customer>): Promise<Customer>
+  - Add createProduct(data?: Partial<Product>): Promise<Product>
+  - Add createOrder(customerId: number, productIds: number[], data?: Partial<Order>): Promise<Order>
+  - Keep existing load() method temporarily for backward compatibility
+  - Add helper method createCustomerWithDefaults() that returns sensible defaults
+
+  Step 1.2 - Add convenience methods for common test scenarios
+  - Add createPendingOrder() - creates customer, products, and pending order
+  - Add createDeliveredOrder() - creates order with DELIVERED status
+  - Add createOrderWithStatus(status: OrderStatus) - creates order with specific status
+  - These reduce boilerplate in tests
+
+  Phase 2: Create Builder Pattern (Optional but Recommended)
+
+  Step 2.1 - Create test/fixtures/builders/ directory
+
+  Step 2.2 - Implement CustomerBuilder
+  class CustomerBuilder {
+    withName(name: string): this
+    withEmail(email: string): this
+    withPhone(phone: string): this
+    withAddress(address: string): this
+    build(): Customer (returns unsaved entity)
+    create(repo: Repository<Customer>): Promise<Customer> (saves to DB)
+  }
+
+  Step 2.3 - Implement ProductBuilder with similar pattern
+
+  Step 2.4 - Implement OrderBuilder with similar pattern
+
+  Step 2.5 - Add builders to GlobalFixtures as convenience accessors
+  - fixtures.builders.customer() returns new CustomerBuilder
+  - fixtures.builders.product() returns new ProductBuilder
+  - fixtures.builders.order() returns new OrderBuilder
+
+  Phase 3: Refactor the Test File (Incremental Migration)
+
+  Step 3.1 - Start with the simplest test: "GET /:id should return order by id"
+  - Remove dependency on fixtures.load()
+  - Create specific data inline: const order = await fixtures.createOrderWithStatus(OrderStatus.PENDING)
+  - Verify test passes
+  - Commit this single test change
+
+  Step 3.2 - Refactor "POST / should create a new order" test
+  - Create only the customer and products needed
+  - Remove reliance on pre-loaded fixtures
+  - Verify test passes
+  - Commit
+
+  Step 3.3 - Refactor "GET / should return all orders" test
+  - Create 2-3 orders specifically for this test
+  - Update assertion to check expect(res.body.length).toBe(3) or whatever created
+  - Verify test passes
+  - Commit
+
+  Step 3.4 - Refactor filter/query tests
+  - "GET /?status=pending" - create 2 pending orders, 1 delivered order
+  - Verify filtering works correctly
+  - Commit
+
+  Step 3.5 - Refactor mutation tests (trickiest)
+  - "PATCH /:id/status" - create order with READY status, update to DELIVERED
+  - "DELETE /:id" - create PENDING order just for deletion
+  - "PATCH invalid transition" - create DELIVERED order, try to move to PREPARING
+  - Commit
+
+  Step 3.6 - Add beforeEach() hook for data isolation
+  beforeEach(async () => {
+    await fixtures.clear();
+  });
+  - This ensures each test starts with clean database
+  - Move this after confirming all tests work individually
+
+  Step 3.7 - Remove fixtures.load() from beforeAll()
+  - Remove cached arrays from GlobalFixtures (getOrders(), etc.) if no longer needed
+  - Clean up unused code
+  - Run full test suite
+  - Commit
+
+  Phase 4: Verify and Optimize
+
+  Step 4.1 - Run the entire test suite multiple times
+  npm test -- order.e2e-spec.ts --runInBand
+  - Verify no flakiness
+  - Verify tests pass in isolation: npm test -- order.e2e-spec.ts -t "POST / should create"
+
+  Step 4.2 - Check other test files
+  - Search for other files using GlobalFixtures: grep -r "GlobalFixtures" test/
+  - Document what needs to be migrated
+  - Create follow-up tasks if other test files exist
+
+  Step 4.3 - Performance check
+  - If tests are too slow with beforeEach() clearing, consider transaction rollback approach
+  - Measure: add timing logs before/after
+
+  Phase 5: Documentation and Cleanup
+
+  Step 5.1 - Add JSDoc comments to factory methods
+  - Document parameters and return types
+  - Add usage examples
+
+  Step 5.2 - Create a test helper guide (if requested)
+  - Document the factory methods available
+  - Show examples of common patterns
+  - Add to README or test/README.md
+
+  Step 5.3 - Final cleanup
+  - Remove any dead code from GlobalFixtures
+  - Ensure consistent naming conventions
+  - Run linter/prettier
+
+  Key Principles to Follow
+
+  1. One test at a time - Don't refactor all tests at once
+  2. Commit frequently - After each test is working
+  3. Run tests after each change - Catch regressions immediately
+  4. Keep old code temporarily - Delete load() only at the end
+  5. Data isolation - Each test should be runnable in isolation
+  6. Readability - Test setup should document what data is needed
+
+  Rollback Strategy
+
+  - Each commit is a checkpoint
+  - If a step fails, revert that commit and reassess
+  - Keep the feature branch small and focused
+
+  Estimated Time
+
+  - Phase 1: 30-45 minutes
+  - Phase 2 (if doing builders): 45-60 minutes
+  - Phase 3: 60-90 minutes
+  - Phase 4: 30 minutes
+  - Phase 5: 15-30 minutes
+  - Total: 3-4 hours
+  ⎿  User rejected Claude's plan:
+     ╭─────────────────────────────────────────────────────────────────╮
+     │ Refactor test fixtures to eliminate coupling:                   │
+     │                                                                 │
+     │ Phase 1: Add factory methods to GlobalFixtures                  │
+     │ - createCustomer(), createProduct(), createOrder()              │
+     │ - Add convenience methods like createOrderWithStatus()          │
+     │                                                                 │
+     │ Phase 2 (optional): Create builder pattern classes              │
+     │ - CustomerBuilder, ProductBuilder, OrderBuilder                 │
+     │ - Fluent API for test data creation                             │
+     │                                                                 │
+     │ Phase 3: Refactor test file incrementally                       │
+     │ - Migrate one test at a time (commit after each)                │
+     │ - Start with simplest (GET by ID), end with complex (mutations) │
+     │ - Add beforeEach() to clear data between tests                  │
+     │ - Remove fixtures.load() from beforeAll()                       │
+     │                                                                 │
+     │ Phase 4: Verify isolation                                       │
+     │ - Run tests multiple times to check for flakiness               │
+     │ - Test each test in isolation                                   │
+     │ - Check other test files for migration needs                    │
+     │                                                                 │
+     │ Phase 5: Document and clean up                                  │
+     │ - Add JSDoc to new methods                                      │
+     │ - Remove dead code                                              │
+     │ - Run linter                                                    │
+     │                                                                 │
+     │ Estimated time: 3-4 hours                                       │
+     ╰─────────────────────────────────────────────────────────────────╯
+
+> Just do phase 1, 2 and 3 
+                                                                                                      
+⏺ User approved Claude's plan:
+  ⎿  Refactor test fixtures to eliminate coupling (Phases 1-3 only):
+
+     Phase 1: Add factory methods to GlobalFixtures
+     - Add createCustomer(), createProduct(), createOrder() methods
+     - Add convenience methods like createOrderWithStatus()
+     - Keep existing load() temporarily for compatibility
+
+     Phase 2: Create builder pattern classes
+     - Create test/fixtures/builders/ directory
+     - Implement CustomerBuilder, ProductBuilder, OrderBuilder
+     - Add builders as accessors in GlobalFixtures
+
+     Phase 3: Refactor test file incrementally
+     - Migrate tests one at a time, commit after each
+     - Start with simple tests (GET by ID), progress to complex (mutations)
+     - Add beforeEach() to clear data between tests
+     - Remove fixtures.load() from beforeAll()
+     - Update assertions to not depend on fixture counts
+
+     Result: Each test creates only the data it needs, tests are independent and can run in isolation.
+
+⏺ Update(test/fixtures/global-fixtures.ts)
+  ⎿  Updated test/fixtures/global-fixtures.ts with 48 additions                                       
+       127        return await this.productRepository.save(products);
+       128      }
+       129    
+       130 +    // Factory methods for creating individual entities
+       131 +    async createCustomer(data?: Partial<Customer>): Promise<Customer> {
+       132 +      const customer = this.customerRepository.create({
+       133 +        name: data?.name ?? 'Test Customer',
+       134 +        email: data?.email ?? `test${Date.now()}@example.com`,
+       135 +        phone: data?.phone ?? '555-0000',
+       136 +        address: data?.address ?? '123 Test St',
+       137 +        ...data,
+       138 +      });
+       139 +      return await this.customerRepository.save(customer);
+       140 +    }
+       141 +  
+       142 +    async createProduct(data?: Partial<Product>): Promise<Product> {
+       143 +      const product = this.productRepository.create({
+       144 +        name: data?.name ?? 'Test Product',
+       145 +        description: data?.description ?? 'Test product description',
+       146 +        price: data?.price ?? 9.99,
+       147 +        category: data?.category ?? 'test',
+       148 +        ...data,
+       149 +      });
+       150 +      return await this.productRepository.save(product);
+       151 +    }
+       152 +  
+       153 +    async createOrder(
+       154 +      customerId: number,
+       155 +      productIds: number[],
+       156 +      data?: Partial<Order>
+       157 +    ): Promise<Order> {
+       158 +      const customer = await this.customerRepository.findOne({
+       159 +        where: { id: customerId },
+       160 +      });
+       161 +  
+       162 +      const products = await this.productRepository.findByIds(productIds);
+       163 +  
+       164 +      const order = this.orderRepository.create({
+       165 +        customer,
+       166 +        products,
+       167 +        totalAmount: data?.totalAmount ?? products.reduce((sum, p) => sum + p.price, 0),
+       168 +        status: data?.status ?? OrderStatus.PENDING,
+       169 +        notes: data?.notes,
+       170 +        createdAt: data?.createdAt,
+       171 +        updatedAt: data?.updatedAt,
+       172 +        ...data,
+       173 +      });
+       174 +  
+       175 +      return await this.orderRepository.save(order);
+       176 +    }
+       177 +  
+       178      // Order creation
+       179      private async createOrders(): Promise<Order[]> {
+       180        // Create dates for the orders - to make first customer eligible for loyalty program
+
+⏺ Update(test/fixtures/global-fixtures.ts)
+  ⎿  Updated test/fixtures/global-fixtures.ts with 34 additions                                         
+       175        return await this.orderRepository.save(order);
+       176      }
+       177    
+       178 +    // Convenience methods for common test scenarios
+       179 +    async createOrderWithStatus(
+       180 +      status: OrderStatus,
+       181 +      overrides?: { customerId?: number; productIds?: number[]; data?: Partial<Order> }
+       182 +    ): Promise<Order> {
+       183 +      let customerId = overrides?.customerId;
+       184 +      let productIds = overrides?.productIds;
+       185 +  
+       186 +      // Create customer if not provided
+       187 +      if (!customerId) {
+       188 +        const customer = await this.createCustomer();
+       189 +        customerId = customer.id;
+       190 +      }
+       191 +  
+       192 +      // Create products if not provided
+       193 +      if (!productIds || productIds.length === 0) {
+       194 +        const product = await this.createProduct();
+       195 +        productIds = [product.id];
+       196 +      }
+       197 +  
+       198 +      return await this.createOrder(customerId, productIds, {
+       199 +        ...overrides?.data,
+       200 +        status,
+       201 +      });
+       202 +    }
+       203 +  
+       204 +    async createPendingOrder(customerId?: number, productIds?: number[]): Promise<Order> {
+       205 +      return this.createOrderWithStatus(OrderStatus.PENDING, { customerId, productIds });
+       206 +    }
+       207 +  
+       208 +    async createDeliveredOrder(customerId?: number, productIds?: number[]): Promise<Order> {
+       209 +      return this.createOrderWithStatus(OrderStatus.DELIVERED, { customerId, productIds });
+       210 +    }
+       211 +  
+       212      // Order creation
+       213      private async createOrders(): Promise<Order[]> {
+       214        // Create dates for the orders - to make first customer eligible for loyalty program
+
+⏺ Bash(mkdir -p /Users/theodo/code/theodo/dojo-refactor-genai/test/fixtures/builders)
+  ⎿  (No content)
+
+⏺ Write(test/fixtures/builders/customer.builder.ts)
+  ⎿  Wrote 43 lines to test/fixtures/builders/customer.builder.ts     
+     import { Repository } from 'typeorm';
+     import { Customer } from '../../../src/entities/customer.entity';
+     export class CustomerBuilder {
+       private customerData: Partial<Customer> = {
+         name: 'Test Customer',
+         email: `test${Date.now()}@example.com`,
+         phone: '555-0000',
+         address: '123 Test St',
+       };
+     … +33 lines (ctrl+o to expand)
+
+⏺ Write(test/fixtures/builders/product.builder.ts)
+  ⎿  Wrote 43 lines to test/fixtures/builders/product.builder.ts    
+     import { Repository } from 'typeorm';
+     import { Product } from '../../../src/entities/product.entity';
+     export class ProductBuilder {
+       private productData: Partial<Product> = {
+         name: 'Test Product',
+         description: 'Test product description',
+         price: 9.99,
+         category: 'test',
+       };
+     … +33 lines (ctrl+o to expand)
+
+⏺ Write(test/fixtures/builders/order.builder.ts)
+  ⎿  Wrote 75 lines to test/fixtures/builders/order.builder.ts               
+     import { Repository } from 'typeorm';
+     import { Order, OrderStatus } from '../../../src/entities/order.entity';
+     import { Customer } from '../../../src/entities/customer.entity';
+     import { Product } from '../../../src/entities/product.entity';
+     export class OrderBuilder {
+       private orderData: Partial<Order> = {
+         status: OrderStatus.PENDING,
+         totalAmount: 0,
+       };
+     … +65 lines (ctrl+o to expand)
+
+⏺ Read(test/fixtures/global-fixtures.ts)
+  ⎿  Read 30 lines (ctrl+o to expand)
+
+⏺ Update(test/fixtures/global-fixtures.ts)
+  ⎿  Updated test/fixtures/global-fixtures.ts with 3 additions                    
+        4    import { Customer } from '../../src/entities/customer.entity';
+        5    import { Product } from '../../src/entities/product.entity';
+        6    import { Order, OrderStatus } from '../../src/entities/order.entity';
+        7 +  import { CustomerBuilder } from './builders/customer.builder';
+        8 +  import { ProductBuilder } from './builders/product.builder';
+        9 +  import { OrderBuilder } from './builders/order.builder';
+       10    
+       11    export class GlobalFixtures {
+       12      private app: INestApplication;
+
+⏺ Update(test/fixtures/global-fixtures.ts)
+  ⎿  Updated test/fixtures/global-fixtures.ts with 18 additions      
+       66        return this.orders;
+       67      }
+       68    
+       69 +    // Builder accessors
+       70 +    get builders() {
+       71 +      return {
+       72 +        customer: () => new CustomerBuilder(),
+       73 +        product: () => new ProductBuilder(),
+       74 +        order: () => new OrderBuilder(),
+       75 +      };
+       76 +    }
+       77 +  
+       78 +    // Repository accessors for builders
+       79 +    get repositories() {
+       80 +      return {
+       81 +        customer: this.customerRepository,
+       82 +        product: this.productRepository,
+       83 +        order: this.orderRepository,
+       84 +      };
+       85 +    }
+       86 +  
+       87      // Customer creation
+       88      private async createCustomers(): Promise<Customer[]> {
+       89        const customers = [
+
+⏺ Read(test/order/order.e2e-spec.ts)
+  ⎿  Read 15 lines (ctrl+o to expand)
+
+⏺ Update(test/order/order.e2e-spec.ts)
+  ⎿  Updated test/order/order.e2e-spec.ts with 3 additions and 2 removals                  
+       66            });
+       67        });
+       68    
+       69 -      it("GET /:id should return order by id", () => {
+       70 -        const order = fixtures.getOrders()[0];
+       69 +      it("GET /:id should return order by id", async () => {
+       70 +        // Create test data
+       71 +        const order = await fixtures.createOrderWithStatus(OrderStatus.PENDING);
+       72    
+       73          return request(app.getHttpServer())
+       74            .get(`/api/orders/${order.id}`)
+
+⏺ Read(test/order/order.e2e-spec.ts)
+  ⎿  Read 23 lines (ctrl+o to expand)
+
+⏺ Update(test/order/order.e2e-spec.ts)
+  ⎿  Updated test/order/order.e2e-spec.ts with 6 additions and 3 removals          
+        95            });
+        96        });
+        97    
+        98 -      it("POST / should create a new order", () => {
+        99 -        const customer = fixtures.getCustomers()[0];
+       100 -        const products = fixtures.getProducts().slice(0, 2);
+        98 +      it("POST / should create a new order", async () => {
+        99 +        // Create test data
+       100 +        const customer = await fixtures.createCustomer();
+       101 +        const product1 = await fixtures.createProduct({ price: 15.0 });
+       102 +        const product2 = await fixtures.createProduct({ price: 15.5 });
+       103 +        const products = [product1, product2];
+       104    
+       105          const createOrderDto: CreateOrderDto = {
+       106            customerId: customer.id,
+
+⏺ Read(test/order/order.e2e-spec.ts)
+  ⎿  Read 16 lines (ctrl+o to expand)
+
+⏺ Update(test/order/order.e2e-spec.ts)
+  ⎿  Updated test/order/order.e2e-spec.ts with 7 additions and 2 removals        
+       37      });
+       38    
+       39      describe("/api/orders", () => {
+       40 -      it("GET / should return all orders", () => {
+       40 +      it("GET / should return all orders", async () => {
+       41 +        // Create test data - 3 orders
+       42 +        await fixtures.createOrderWithStatus(OrderStatus.PENDING);
+       43 +        await fixtures.createOrderWithStatus(OrderStatus.DELIVERED);
+       44 +        await fixtures.createOrderWithStatus(OrderStatus.PREPARING);
+       45 +  
+       46          return request(app.getHttpServer())
+       47            .get("/api/orders")
+       48            .expect(200)
+       49            .expect((res) => {
+       50              expect(Array.isArray(res.body)).toBe(true);
+       51 -            expect(res.body.length).toBe(fixtures.getOrders().length);
+       51 +            expect(res.body.length).toBe(3);
+       52    
+       53              // Check if each order has customer and products
+       54              res.body.forEach((order) => {
+
+⏺ Read(test/order/order.e2e-spec.ts)
+  ⎿  Read 12 lines (ctrl+o to expand)
+
+⏺ Update(test/order/order.e2e-spec.ts)
+  ⎿  Updated test/order/order.e2e-spec.ts with 7 additions and 1 removal                
+       59            });
+       60        });
+       61    
+       62 -      it("GET /?status=pending should filter orders by status", () => {
+       62 +      it("GET /?status=pending should filter orders by status", async () => {
+       63 +        // Create test data - 2 pending orders and 1 delivered order
+       64 +        await fixtures.createOrderWithStatus(OrderStatus.PENDING);
+       65 +        await fixtures.createOrderWithStatus(OrderStatus.PENDING);
+       66 +        await fixtures.createOrderWithStatus(OrderStatus.DELIVERED);
+       67 +  
+       68          return request(app.getHttpServer())
+       69            .get("/api/orders?status=pending")
+       70            .expect(200)
+       71            .expect((res) => {
+       72              expect(Array.isArray(res.body)).toBe(true);
+       73 +            expect(res.body.length).toBe(2);
+       74              res.body.forEach((order) => {
+       75                expect(order.status).toBe("pending");
+       76              });
+
+⏺ Read(test/order/order.e2e-spec.ts)
+  ⎿  Read 15 lines (ctrl+o to expand)
+
+⏺ Update(test/order/order.e2e-spec.ts)
+  ⎿  Updated test/order/order.e2e-spec.ts with 11 additions and 4 removals                                    
+        92            });
+        93        });
+        94    
+        95 -      it("GET /customer/:customerId should return orders for a customer", () => {
+        96 -        const customer = fixtures.getCustomers()[0];
+        95 +      it("GET /customer/:customerId should return orders for a customer", async () => {
+        96 +        // Create test data - one customer with 2 orders, another with 1 order
+        97 +        const customer1 = await fixtures.createCustomer();
+        98 +        const customer2 = await fixtures.createCustomer();
+        99    
+       100 +        await fixtures.createOrderWithStatus(OrderStatus.PENDING, { customerId: customer1.id });
+       101 +        await fixtures.createOrderWithStatus(OrderStatus.DELIVERED, { customerId: customer1.id });
+       102 +        await fixtures.createOrderWithStatus(OrderStatus.PENDING, { customerId: customer2.id });
+       103 +  
+       104          return request(app.getHttpServer())
+       105 -          .get(`/api/orders/customer/${customer.id}`)
+       105 +          .get(`/api/orders/customer/${customer1.id}`)
+       106            .expect(200)
+       107            .expect((res) => {
+       108              expect(Array.isArray(res.body)).toBe(true);
+       109 +            expect(res.body.length).toBe(2);
+       110              res.body.forEach((order) => {
+       111 -              expect(order.customer.id).toBe(customer.id);
+       111 +              expect(order.customer.id).toBe(customer1.id);
+       112              });
+       113            });
+       114        });
+
+⏺ Read(test/order/order.e2e-spec.ts)
+  ⎿  Read 15 lines (ctrl+o to expand)
+
+⏺ Read(test/order/order.e2e-spec.ts)
+  ⎿  Read 20 lines (ctrl+o to expand)
+
+⏺ Update(test/order/order.e2e-spec.ts)
+  ⎿  Updated test/order/order.e2e-spec.ts with 3 additions and 4 removals                 
+       140            });
+       141        });
+       142    
+       143 -      it("PATCH /:id/status should update order status", () => {
+       144 -        const order = fixtures
+       145 -          .getOrders()
+       146 -          .find((o) => o.status === OrderStatus.READY);
+       143 +      it("PATCH /:id/status should update order status", async () => {
+       144 +        // Create test data - order with READY status
+       145 +        const order = await fixtures.createOrderWithStatus(OrderStatus.READY);
+       146          const newStatus = OrderStatus.DELIVERED;
+       147    
+       148          return request(app.getHttpServer())
+
+⏺ Read(test/order/order.e2e-spec.ts)
+  ⎿  Read 12 lines (ctrl+o to expand)
+
+⏺ Update(test/order/order.e2e-spec.ts)
+  ⎿  Updated test/order/order.e2e-spec.ts with 3 additions and 4 removals                        
+       155            });
+       156        });
+       157    
+       158 -      it("PATCH /:id/status should prevent invalid status transitions", () => {
+       159 -        const order = fixtures
+       160 -          .getOrders()
+       161 -          .find((o) => o.status === OrderStatus.DELIVERED);
+       158 +      it("PATCH /:id/status should prevent invalid status transitions", async () => {
+       159 +        // Create test data - delivered order cannot go back to preparing
+       160 +        const order = await fixtures.createOrderWithStatus(OrderStatus.DELIVERED);
+       161          const newStatus = OrderStatus.PREPARING;
+       162    
+       163          return request(app.getHttpServer())
+
+⏺ Read(test/order/order.e2e-spec.ts)
+  ⎿  Read 20 lines (ctrl+o to expand)
+
+⏺ Update(test/order/order.e2e-spec.ts)
+  ⎿  Updated test/order/order.e2e-spec.ts with 3 additions and 8 removals                   
+       166            .expect(400);
+       167        });
+       168    
+       169 -      it("DELETE /:id should cancel an order", () => {
+       170 -        const order = fixtures
+       171 -          .getOrders()
+       172 -          .find(
+       173 -            (o) =>
+       174 -              o.status === OrderStatus.PENDING ||
+       175 -              o.status === OrderStatus.PREPARING
+       176 -          );
+       169 +      it("DELETE /:id should cancel an order", async () => {
+       170 +        // Create test data - order with PENDING status
+       171 +        const order = await fixtures.createOrderWithStatus(OrderStatus.PENDING);
+       172    
+       173          return request(app.getHttpServer())
+       174            .delete(`/api/orders/${order.id}`)
+
+⏺ Read(test/order/order.e2e-spec.ts)
+  ⎿  Read 30 lines (ctrl+o to expand)
+
+⏺ Update(test/order/order.e2e-spec.ts)
+  ⎿  Updated test/order/order.e2e-spec.ts with 5 additions and 1 removal
+       28    
+       29        // Initialize fixtures
+       30        fixtures = new GlobalFixtures(app);
+       31 -      await fixtures.load();
+       31      });
+       32    
+       33 +    beforeEach(async () => {
+       34 +      // Clear data before each test to ensure test isolation
+       35 +      await fixtures.clear();
+       36 +    });
+       37 +  
+       38      afterAll(async () => {
+       39        await fixtures.clear();
+       40        await app.close();
+
+⏺ Search(pattern: "getCustomers|getProducts|getOrders", path: "test/order/order.e2e-spec.ts", output_mode: "content")
+  ⎿  Found 0 lines 
+
+⏺ Search(pattern: "GlobalFixtures", glob: "**/*.spec.ts")
+  ⎿  Found 0 files 
+
+⏺ Search(pattern: "**/*.spec.ts")
+  ⎿  Found 0 files 
+
+⏺ Search(pattern: "**/*.e2e-spec.ts")
+  ⎿  Found 5 files (ctrl+o to expand)
+
+⏺ Search(pattern: "GlobalFixtures", glob: "**/*.e2e-spec.ts")
+  ⎿  Found 5 files (ctrl+o to expand)
+
+⏺ Search(pattern: "(getCustomers|getProducts|getOrders|fixtures\.load)\(\)", glob: "**/*.e2e-spec.ts")
+  ⎿  Found 4 files (ctrl+o to expand)
+
+⏺ Since other test files still use the old load() method and getter methods (getCustomers(), getProducts(), getOrders()), I'll keep them in GlobalFixtures for backward compatibility.
+  The order test is now fully refactored and no longer uses them.
+
+  Let me mark the final task as completed and run the tests to verify everything works:
+
+⏺ Bash(npm test -- test/order/order.e2e-spec.ts)
+  ⎿  Interrupted · What should Claude do instead?
+
+> use pnpm run test:e2e 
+
+⏺ Bash(pnpm run test:e2e test/order/order.e2e-spec.ts)
+  ⎿  Error: FAIL test/order/order.e2e-spec.ts
+       ● Test suite failed to run
+
+         test/order/order.e2e-spec.ts:104:67 - error TS2322: Type 'string' is not assignable to type 'number'.
+
+         104       await fixtures.createOrderWithStatus(OrderStatus.PENDING, { customerId: customer1.id });
+                                                                               ~~~~~~~~~~
+
+           test/fixtures/global-fixtures.ts:202:19
+             202     overrides?: { customerId?: number; productIds?: number[]; data?: Partial<Order> }
+     … +46 lines (ctrl+o to see all)
+
+⏺ I have a TypeScript error - the customer.id is not a number. Let me check the Customer entity to see what type the id is:
+
+⏺ Search(pattern: "class Customer", glob: "**/*.entity.ts")
+  ⎿  Found 1 file (ctrl+o to expand)
+
+⏺ Read(src/entities/customer.entity.ts)
+  ⎿  Read 30 lines (ctrl+o to expand)
+
+⏺ Read(src/entities/product.entity.ts)
+  ⎿  Read 20 lines (ctrl+o to expand)
+
+⏺ Both entities use UUID strings for IDs. I need to fix the type signatures in GlobalFixtures:
+
+⏺ Update(test/fixtures/global-fixtures.ts)
+  ⎿  Updated test/fixtures/global-fixtures.ts with 2 additions and 2 removals
+       172      }
+       173    
+       174      async createOrder(
+       175 -      customerId: number,
+       176 -      productIds: number[],
+       175 +      customerId: string,
+       176 +      productIds: string[],
+       177        data?: Partial<Order>
+       178      ): Promise<Order> {
+       179        const customer = await this.customerRepository.findOne({
+
+⏺ Update(test/fixtures/global-fixtures.ts)
+  ⎿  Updated test/fixtures/global-fixtures.ts with 1 addition and 1 removal                        
+       199      // Convenience methods for common test scenarios
+       200      async createOrderWithStatus(
+       201        status: OrderStatus,
+       202 -      overrides?: { customerId?: number; productIds?: number[]; data?: Partial<Order> }
+       202 +      overrides?: { customerId?: string; productIds?: string[]; data?: Partial<Order> }
+       203      ): Promise<Order> {
+       204        let customerId = overrides?.customerId;
+       205        let productIds = overrides?.productIds;
+
+⏺ Update(test/fixtures/global-fixtures.ts)
+  ⎿  Updated test/fixtures/global-fixtures.ts with 2 additions and 2 removals                           
+       222        });
+       223      }
+       224    
+       225 -    async createPendingOrder(customerId?: number, productIds?: number[]): Promise<Order> {
+       225 +    async createPendingOrder(customerId?: string, productIds?: string[]): Promise<Order> {
+       226        return this.createOrderWithStatus(OrderStatus.PENDING, { customerId, productIds });
+       227      }
+       228    
+       229 -    async createDeliveredOrder(customerId?: number, productIds?: number[]): Promise<Order> {
+       229 +    async createDeliveredOrder(customerId?: string, productIds?: string[]): Promise<Order> {
+       230        return this.createOrderWithStatus(OrderStatus.DELIVERED, { customerId, productIds });
+       231      }
+       232    
+
+⏺ Bash(pnpm run test:e2e test/order/order.e2e-spec.ts)
+  ⎿  > restaurant-api@0.0.1 test:e2e /Users/theodo/code/theodo/dojo-refactor-genai                                         
+     > NODE_ENV=test npm run migration:run && jest --config ./test/jest-e2e.json --runInBand "test/order/order.e2e-spec.ts"
+     … +32 lines (ctrl+o to expand)
+
+⏺ Perfect! All tests are passing. The refactoring is complete.
+
+  Summary
+
+  Successfully refactored the test fixtures system:
+
+  Phase 1 - Factory Methods ✓
+  - Added createCustomer(), createProduct(), createOrder() to GlobalFixtures
+  - Added convenience methods: createOrderWithStatus(), createPendingOrder(), createDeliveredOrder()
+
+  Phase 2 - Builder Pattern ✓
+  - Created CustomerBuilder, ProductBuilder, OrderBuilder in test/fixtures/builders/
+  - Added builder accessors to GlobalFixtures for fluent API usage
+
+  Phase 3 - Test Refactoring ✓
+  - Refactored all 8 tests in order.e2e-spec.ts
+  - Each test now creates only the data it needs
+  - Added beforeEach() hook to clear data between tests
+  - Removed fixtures.load() from beforeAll()
+  - Tests are now independent and can run in any order
+
+  Results:
+  - ✅ All 8 tests passing
+  - ✅ No coupling between tests
+  - ✅ Each test is self-contained and readable
+  - ✅ Tests document their own data requirements
+
+  The old load() method and getter methods are kept in GlobalFixtures for backward compatibility with other test files (customer, product, loyalty, app).
+
+
+
+
