@@ -28,7 +28,6 @@ describe("OrderController (e2e)", () => {
 
     // Initialize fixtures
     fixtures = new GlobalFixtures(app);
-    await fixtures.load();
   });
 
   afterAll(async () => {
@@ -37,7 +36,8 @@ describe("OrderController (e2e)", () => {
   });
 
   describe("/api/orders", () => {
-    it("GET / should return all orders", () => {
+    it("GET / should return all orders", async () => {
+      await fixtures.load();
       return request(app.getHttpServer())
         .get("/api/orders")
         .expect(200)
@@ -54,7 +54,8 @@ describe("OrderController (e2e)", () => {
         });
     });
 
-    it("GET /?status=pending should filter orders by status", () => {
+    it("GET /?status=pending should filter orders by status", async () => {
+      await fixtures.load();
       return request(app.getHttpServer())
         .get("/api/orders?status=pending")
         .expect(200)
@@ -66,7 +67,8 @@ describe("OrderController (e2e)", () => {
         });
     });
 
-    it("GET /:id should return order by id", () => {
+    it("GET /:id should return order by id", async () => {
+      await fixtures.load();
       const order = fixtures.getOrders()[0];
 
       return request(app.getHttpServer())
@@ -80,7 +82,8 @@ describe("OrderController (e2e)", () => {
         });
     });
 
-    it("GET /customer/:customerId should return orders for a customer", () => {
+    it("GET /customer/:customerId should return orders for a customer", async () => {
+      await fixtures.load();
       const customer = fixtures.getCustomers()[0];
 
       return request(app.getHttpServer())
@@ -94,9 +97,12 @@ describe("OrderController (e2e)", () => {
         });
     });
 
-    it("POST / should create a new order", () => {
-      const customer = fixtures.getCustomers()[0];
-      const products = fixtures.getProducts().slice(0, 2);
+    it("POST / should create a new order", async () => {
+      const allCustomers = await fixtures.createCustomers();
+      const allProducts = await fixtures.createProducts();
+
+      const customer = allCustomers[0];
+      const products = allProducts.slice(0, 2);
 
       const createOrderDto: CreateOrderDto = {
         customerId: customer.id,
@@ -118,7 +124,8 @@ describe("OrderController (e2e)", () => {
         });
     });
 
-    it("PATCH /:id/status should update order status", () => {
+    it("PATCH /:id/status should update order status", async () => {
+      await fixtures.load();
       const order = fixtures
         .getOrders()
         .find((o) => o.status === OrderStatus.READY);
@@ -134,7 +141,8 @@ describe("OrderController (e2e)", () => {
         });
     });
 
-    it("PATCH /:id/status should prevent invalid status transitions", () => {
+    it("PATCH /:id/status should prevent invalid status transitions", async () => {
+      await fixtures.load();
       const order = fixtures
         .getOrders()
         .find((o) => o.status === OrderStatus.DELIVERED);
@@ -146,7 +154,8 @@ describe("OrderController (e2e)", () => {
         .expect(400);
     });
 
-    it("DELETE /:id should cancel an order", () => {
+    it("DELETE /:id should cancel an order", async () => {
+      await fixtures.load();
       const order = fixtures
         .getOrders()
         .find(

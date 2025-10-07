@@ -5,7 +5,7 @@ import { Customer } from "../../src/entities/customer.entity";
 import { Product } from "../../src/entities/product.entity";
 import { Order, OrderStatus } from "../../src/entities/order.entity";
 
-export class GlobalFixtures {
+export class ProductsFixtures {
   private app: INestApplication;
   private customerRepository: Repository<Customer>;
   private productRepository: Repository<Product>;
@@ -64,7 +64,7 @@ export class GlobalFixtures {
   }
 
   // Customer creation
-  public async createCustomers(): Promise<Customer[]> {
+  private async createCustomers(): Promise<Customer[]> {
     const customers = [
       this.customerRepository.create({
         name: "John Doe",
@@ -90,7 +90,7 @@ export class GlobalFixtures {
   }
 
   // Product creation
-  public async createProducts(): Promise<Product[]> {
+  private async createProducts(): Promise<Product[]> {
     const products = [
       this.productRepository.create({
         name: "Margherita Pizza",
@@ -129,7 +129,7 @@ export class GlobalFixtures {
   }
 
   // Order creation
-  public async createOrders(): Promise<Order[]> {
+  private async createOrders(): Promise<Order[]> {
     // Create dates for the orders - to make first customer eligible for loyalty program
     const now = new Date();
     const tenDaysAgo = new Date(now);
@@ -183,3 +183,12 @@ export class GlobalFixtures {
     return await this.orderRepository.save(orders);
   }
 }
+
+/**
+ * Avant on avait une seule commande pour load un type de fixture
+ * Par ex : create des orders ou alors create des products mais on
+ * n'a pas de granularité sur ce système
+ *
+ * On pourrait soit faire un système plus modulaire
+ * Soit faire des fixtures dédiées à chaque test
+ */
