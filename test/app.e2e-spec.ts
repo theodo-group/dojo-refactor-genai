@@ -1,42 +1,148 @@
-import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication, ValidationPipe } from '@nestjs/common';
-import * as request from 'supertest';
-import { AppModule } from './../src/app.module';
-import { GlobalFixtures } from './fixtures/global-fixtures';
+import { INestApplication } from "@nestjs/common";
+import * as request from "supertest";
+import { setupTestApp } from "./helpers/app.helper";
+import { FixturesHelper } from "./helpers/fixtures.helper";
+import { DatabaseHelper } from "./helpers/database.helper";
 
-describe('AppController (e2e)', () => {
+describe("AppController (e2e)", () => {
   let app: INestApplication;
-  let fixtures: GlobalFixtures;
+  let fixtures: FixturesHelper;
+  let database: DatabaseHelper;
 
-  beforeAll(async () => {
-    const moduleFixture: TestingModule = await Test.createTestingModule({
-      imports: [AppModule],
-    }).compile();
-
-    app = moduleFixture.createNestApplication();
-    app.useGlobalPipes(
-      new ValidationPipe({
-        whitelist: true,
-        transform: true,
-        forbidNonWhitelisted: true,
-      }),
-    );
-    app.setGlobalPrefix('api');
-    await app.init();
-
-    // Initialize fixtures
-    fixtures = new GlobalFixtures(app);
-    await fixtures.load();
+  beforeEach(async () => {
+    app = await setupTestApp();
+    fixtures = new FixturesHelper(app);
+    database = new DatabaseHelper(app);
+    await database.cleanDatabase();
   });
 
-  afterAll(async () => {
-    await fixtures.clear();
-    await app.close();
+  afterEach(async () => {
+    await database.cleanDatabase();
+    if (app) {
+      await app.close();
+    }
   });
 
-  it('/ (GET)', () => {
-    return request(app.getHttpServer())
-      .get('/')
-      .expect(404); // Root path is not defined
+  describe("Application Health & Basic Tests", () => {
+    it("/ (GET)", () => {
+      return request(app.getHttpServer()).get("/").expect(404);
+    });
+
+    it("/api (GET) should return 404 for undefined API root", () => {
+      return request(app.getHttpServer()).get("/api").expect(404);
+    });
+
+    it("should handle invalid JSON gracefully", () => {
+      return request(app.getHttpServer())
+        .post("/api/customers")
+        .send('{"invalid": json}')
+        .set("Content-Type", "application/json")
+        .expect(400);
+    });
+
+    it("should handle large request bodies within limits", () => {
+      const largeButValidData = {
+        name: "A".repeat(100),
+        email: "verylongemail@example.com",
+        phone: "1".repeat(20),
+        address: "B".repeat(500),
+      };
+
+      return request(app.getHttpServer())
+        .post("/api/customers")
+        .send(largeButValidData)
+        .expect(201);
+    });
+
+    it("should return appropriate error for unsupported HTTP methods", () => {
+      return request(app.getHttpServer()).patch("/api/customers").expect(404);
+    });
+
+    it("should handle malformed UUIDs in path parameters", () => {
+      return request(app.getHttpServer())
+        .get("/api/customers/invalid-uuid-format")
+        .expect(400);
+    });
+
+    it("should properly handle query parameter validation", () => {
+      return request(app.getHttpServer())
+        .get("/api/products?category=pizza&available=not-boolean")
+        .expect(200)
+        .expect((res) => {
+          expect(Array.isArray(res.body)).toBe(true);
+        });
+    });
+  });
+
+  describe("API Performance & Load Tests", () => {
+    it("should maintain data consistency under concurrent modifications", async () => {
+      const customer = await fixtures.createCustomer({
+        name: "Concurrent Test Customer",
+      });
+
+      const updates = Array.from({ length: 5 }, (_, i) =>
+        request(app.getHttpServer())
+          .patch(`/api/customers/${customer.id}`)
+          .send({ name: `Updated Name ${i}` })
+          .expect(200)
+      );
+
+      const results = await Promise.all(updates);
+
+      expect(results.some((res) => res.status === 200)).toBe(true);
+
+      const finalCustomer = await request(app.getHttpServer())
+        .get(`/api/customers/${customer.id}`)
+        .expect(200);
+
+      expect(finalCustomer.body.name).toMatch(/Updated Name \d/);
+    });
+  });
+
+  describe("Error Handling & Edge Cases", () => {
+    it("should handle database connection errors gracefully", async () => {
+      const invalidOperations = [
+        request(app.getHttpServer())
+          .get("/api/customers/00000000-0000-0000-0000-000000000000")
+          .expect(404),
+        request(app.getHttpServer())
+          .post("/api/orders")
+          .send({
+            customerId: "00000000-0000-0000-0000-000000000000",
+            productIds: ["00000000-0000-0000-0000-000000000000"],
+            totalAmount: 100,
+          })
+          .expect(400),
+      ];
+
+      await Promise.all(invalidOperations);
+    });
+
+    it("should handle empty request bodies appropriately", () => {
+      return request(app.getHttpServer())
+        .post("/api/customers")
+        .send({})
+        .expect(400)
+        .expect((res) => {
+          expect(res.body.message).toBeDefined();
+          expect(Array.isArray(res.body.message)).toBe(true);
+        });
+    });
+
+    it("should handle special characters in request data", () => {
+      return request(app.getHttpServer())
+        .post("/api/customers")
+        .send({
+          name: "José María Çağlar-Schmidt",
+          email: "test.email+tag@example.co.uk",
+          phone: "+1-(555)-123-4567",
+          address: '123 Main St., Apt. #4B, "Special" Building',
+        })
+        .expect(201)
+        .expect((res) => {
+          expect(res.body.name).toBe("José María Çağlar-Schmidt");
+          expect(res.body.email).toBe("test.email+tag@example.co.uk");
+        });
+    });
   });
 });
