@@ -2,13 +2,26 @@ import { Test, TestingModule } from "@nestjs/testing";
 import { INestApplication, ValidationPipe } from "@nestjs/common";
 import * as request from "supertest";
 import { AppModule } from "../../src/app.module";
-import { GlobalFixtures } from "../fixtures/global-fixtures";
+import {
+  clearDatabase,
+  createStandardCustomer,
+  createStandardProducts,
+  createPendingOrder,
+  createReadyOrder,
+  createDeliveredOrder,
+  createPreparingOrder,
+} from "../fixtures/global-fixtures";
 import { CreateOrderDto } from "../../src/order/dto/create-order.dto";
 import { OrderStatus } from "../../src/entities/order.entity";
+import { Customer } from "../../src/entities/customer.entity";
+import { Product } from "../../src/entities/product.entity";
+import { Order } from "../../src/entities/order.entity";
 
 describe("OrderController (e2e)", () => {
   let app: INestApplication;
-  let fixtures: GlobalFixtures;
+  let customers: Customer[];
+  let products: Product[];
+  let orders: Order[];
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -25,14 +38,36 @@ describe("OrderController (e2e)", () => {
     );
     app.setGlobalPrefix("api");
     await app.init();
+  });
 
-    // Initialize fixtures
-    fixtures = new GlobalFixtures(app);
-    await fixtures.load();
+  beforeEach(async () => {
+    await clearDatabase(app);
+
+    // Create isolated test data
+    customers = [
+      await createStandardCustomer(app, {
+        name: "John Doe",
+        email: "john@example.com",
+      }),
+      await createStandardCustomer(app, {
+        name: "Jane Smith",
+        email: "jane@example.com",
+      }),
+    ];
+
+    products = await createStandardProducts(app);
+
+    // Create various orders for testing
+    orders = [
+      await createDeliveredOrder(app, customers[0], [products[0], products[3]]),
+      await createPreparingOrder(app, customers[0], [products[1], products[2]]),
+      await createReadyOrder(app, customers[0], [products[4]]),
+      await createPendingOrder(app, customers[1], [products[0]]),
+    ];
   });
 
   afterAll(async () => {
-    await fixtures.clear();
+    await clearDatabase(app);
     await app.close();
   });
 
@@ -43,7 +78,7 @@ describe("OrderController (e2e)", () => {
         .expect(200)
         .expect((res) => {
           expect(Array.isArray(res.body)).toBe(true);
-          expect(res.body.length).toBe(fixtures.getOrders().length);
+          expect(res.body.length).toBe(orders.length);
 
           // Check if each order has customer and products
           res.body.forEach((order) => {
@@ -67,7 +102,7 @@ describe("OrderController (e2e)", () => {
     });
 
     it("GET /:id should return order by id", () => {
-      const order = fixtures.getOrders()[0];
+      const order = orders[0];
 
       return request(app.getHttpServer())
         .get(`/api/orders/${order.id}`)
@@ -81,7 +116,7 @@ describe("OrderController (e2e)", () => {
     });
 
     it("GET /customer/:customerId should return orders for a customer", () => {
-      const customer = fixtures.getCustomers()[0];
+      const customer = customers[0];
 
       return request(app.getHttpServer())
         .get(`/api/orders/customer/${customer.id}`)
@@ -95,12 +130,13 @@ describe("OrderController (e2e)", () => {
     });
 
     it("POST / should create a new order", () => {
-      const customer = fixtures.getCustomers()[0];
-      const products = fixtures.getProducts().slice(0, 2);
+      // Use a customer with no order history to avoid loyalty discount
+      const customer = customers[1];
+      const orderProducts = products.slice(0, 2);
 
       const createOrderDto: CreateOrderDto = {
         customerId: customer.id,
-        productIds: products.map((p) => p.id),
+        productIds: orderProducts.map((p) => p.id),
         totalAmount: 30.5,
         notes: "Test order notes",
       };
@@ -114,14 +150,12 @@ describe("OrderController (e2e)", () => {
           expect(res.body.totalAmount).toBe(createOrderDto.totalAmount);
           expect(res.body.notes).toBe(createOrderDto.notes);
           expect(res.body.customer.id).toBe(customer.id);
-          expect(res.body.products.length).toBe(products.length);
+          expect(res.body.products.length).toBe(orderProducts.length);
         });
     });
 
     it("PATCH /:id/status should update order status", () => {
-      const order = fixtures
-        .getOrders()
-        .find((o) => o.status === OrderStatus.READY);
+      const order = orders.find((o) => o.status === OrderStatus.READY);
       const newStatus = OrderStatus.DELIVERED;
 
       return request(app.getHttpServer())
@@ -135,9 +169,7 @@ describe("OrderController (e2e)", () => {
     });
 
     it("PATCH /:id/status should prevent invalid status transitions", () => {
-      const order = fixtures
-        .getOrders()
-        .find((o) => o.status === OrderStatus.DELIVERED);
+      const order = orders.find((o) => o.status === OrderStatus.DELIVERED);
       const newStatus = OrderStatus.PREPARING;
 
       return request(app.getHttpServer())
@@ -147,13 +179,11 @@ describe("OrderController (e2e)", () => {
     });
 
     it("DELETE /:id should cancel an order", () => {
-      const order = fixtures
-        .getOrders()
-        .find(
-          (o) =>
-            o.status === OrderStatus.PENDING ||
-            o.status === OrderStatus.PREPARING
-        );
+      const order = orders.find(
+        (o) =>
+          o.status === OrderStatus.PENDING ||
+          o.status === OrderStatus.PREPARING
+      );
 
       return request(app.getHttpServer())
         .delete(`/api/orders/${order.id}`)

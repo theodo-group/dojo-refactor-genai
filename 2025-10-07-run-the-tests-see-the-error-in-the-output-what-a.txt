@@ -1,0 +1,1204 @@
+
+ ▐▛███▜▌   Claude Code v2.0.9
+▝▜█████▛▘  Sonnet 4.5 · API Usage Billing
+  ▘▘ ▝▝    /home/sebastien/Projets/theodo-group/dojo-refactor-genai
+
+> run the tests, see the error in the output. What are the possible solutions to that ? 
+
+● I'll run the tests to see the error and then propose solutions.
+
+● Bash(pnpm run test:e2e)
+  ⎿  Error: PASS test/product/product.e2e-spec.ts
+     FAIL test/order/order.e2e-spec.ts
+       ● OrderController (e2e) › /api/orders › POST / should create a new order
+
+         expect(received).toBe(expected) // Object.is equality
+
+         Expected: 30.5
+         Received: 27.45
+
+           110 |         .send(createOrderDto)
+     … +44 lines (ctrl+o to see all)
+
+● Now let me examine the test file to understand the issue better:
+
+● Read(test/order/order.e2e-spec.ts)
+  ⎿  Read 173 lines (ctrl+o to expand)
+
+● Read(test/fixtures/global-fixtures.ts)
+  ⎿  Read 184 lines (ctrl+o to expand)
+
+● Read(src/loyalty/loyalty.service.ts)
+  ⎿  Read 34 lines (ctrl+o to expand)
+
+● Let me check the order service to see if it applies the loyalty discount:
+
+● Read(src/order/order.service.ts)
+  ⎿  Read 149 lines (ctrl+o to expand)
+
+● The Error
+
+  The test in test/order/order.e2e-spec.ts:114 is failing because:
+  - Expected: totalAmount = 30.5
+  - Received: totalAmount = 27.45 (which is 30.5 × 0.9, a 10% discount)
+
+  Root Cause
+
+  The global fixtures create 4 orders for the first customer (fixtures.getCustomers()[0]) dated 10, 15, 20, and 25 days ago. When the order test runs:
+
+  1. Line 98: Uses fixtures.getCustomers()[0] (John Doe - the same customer with 4 historical orders)
+  2. Line 79-82: OrderService.create() calls loyaltyService.calculateNextOrderAmount()
+  3. LoyaltyService checks orders in the last month and finds >3 orders, applying a 10% discount
+  4. The test expects 30.5 but receives 27.45
+
+  This is a classic test interdependence issue - the global fixtures cause side effects that break tests expecting clean state.
+
+  Possible Solutions
+
+  1. Isolated Test Fixtures (Recommended)
+
+  Each test file creates its own fixtures instead of sharing global ones.
+
+  Pros:
+  - Tests are completely independent
+  - Tests can run in any order
+  - Easy to understand test data scope
+  - No hidden dependencies
+
+  Cons:
+  - Slightly more code duplication
+  - Slower execution (more DB setup per test file)
+
+  2. Per-Test Database Transactions
+
+  Wrap each test in a transaction that rolls back after completion.
+
+  Pros:
+  - Fast test execution
+  - Complete isolation between tests
+  - No need to manually clear data
+
+  Cons:
+  - Requires test infrastructure setup (transaction management)
+  - Can hide real-world issues with transactions
+
+  3. Factory Functions Instead of Shared State
+
+  Replace global fixtures with factory functions that create fresh data on demand.
+
+  Pros:
+  - Tests request only the data they need
+  - No shared mutable state
+  - Easy to create variations for specific test cases
+
+  Cons:
+  - Tests need to explicitly create all data
+  - Slightly more verbose
+
+  4. Fix This Specific Test (Quick Fix, Not Recommended)
+
+  Use a different customer without historical orders or expect the discounted amount.
+
+  Pros:
+  - Minimal changes to fix this one test
+
+  Cons:
+  - Doesn't solve the underlying problem
+  - Tests remain fragile and order-dependent
+  - Will break again with new features
+
+  5. Namespace/Partition Test Data
+
+  Each test suite uses different customers/data to avoid collision.
+
+  Pros:
+  - Faster than isolated fixtures
+  - Can still share some common data
+
+  Cons:
+  - Requires careful coordination
+  - Still has some interdependence
+  - Harder to maintain as tests grow
+  ⎿  User rejected Claude's plan:
+     ╭─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+     │ I recommend Solution #1: Isolated Test Fixtures as the best approach.                                               │
+     │                                                                                                                     │
+     │ Plan:                                                                                                               │
+     │ 1. Remove global fixtures dependency                                                                                │
+     │ 2. Create local fixtures per test file (or per test suite)                                                          │
+     │ 3. Each test file manages its own data setup/teardown                                                               │
+     │ 4. For the order test specifically: use a customer with no historical orders, so loyalty discount doesn't interfere │
+     │                                                                                                                     │
+     │ This ensures tests are independent, can run in isolation, and won't break when new features are added.              │
+     ╰─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+> we will start with your first solution : Isolated Test Fixtures but continue to improve it. 
+1. Remove global fixtures dependency                                                                                
+2. Create local fixtures per test file (or per test suite)                                                          
+3. Each test file manages its own data setup/teardown                                                               
+4. For the order test specifically: use a customer with no historical orders, so loyalty discount doesn't interfere 
+5. Refactor all the fixtures to use explicit namings like createCustomerWith3Orders
+6. Use thos specific public functions in tests
+
+Validate that all is working running the tests 
+
+● Let me first check all the test files to understand the full scope:
+
+● Read(test/customer/customer.e2e-spec.ts)
+  ⎿  Read 146 lines (ctrl+o to expand)
+
+● Read(test/product/product.e2e-spec.ts)
+  ⎿  Read 143 lines (ctrl+o to expand)
+
+● Read(test/loyalty/loyalty.e2e-spec.ts)
+  ⎿  Read 74 lines (ctrl+o to expand)
+  ⎿  User rejected Claude's plan:
+     ╭─────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+     │ Refactoring Plan: Isolated Test Fixtures                                                                    │
+     │                                                                                                             │
+     │ 1. Create new test helper with explicit factory functions                                                   │
+     │                                                                                                             │
+     │ - Create /test/helpers/test-fixtures.ts with factory functions:                                             │
+     │   - createStandardCustomer(), createCustomerWith3Orders(), createCustomerWith4Orders()                      │
+     │   - createPizzaProduct(), createSaladProduct(), etc.                                                        │
+     │   - createPendingOrder(), createDeliveredOrder(), etc.                                                      │
+     │   - clearDatabase() helper to clean all tables                                                              │
+     │                                                                                                             │
+     │ 2. Update each test file to use isolated fixtures                                                           │
+     │                                                                                                             │
+     │ - order.e2e-spec.ts: Use createStandardCustomer() (no order history) to avoid loyalty discount interference │
+     │ - customer.e2e-spec.ts: Create its own 3 customers in beforeEach                                            │
+     │ - product.e2e-spec.ts: Create its own 5 products in beforeEach                                              │
+     │ - loyalty.e2e-spec.ts: Use createCustomerWith4Orders() specifically for discount testing                    │
+     │                                                                                                             │
+     │ 3. Remove global fixtures                                                                                   │
+     │                                                                                                             │
+     │ - Delete /test/fixtures/global-fixtures.ts                                                                  │
+     │ - Remove all imports of GlobalFixtures from test files                                                      │
+     │                                                                                                             │
+     │ 4. Validate with test run                                                                                   │
+     │                                                                                                             │
+     │ - Run pnpm run test:e2e to ensure all tests pass                                                            │
+     │ - Verify tests can run in any order                                                                         │
+     ╰─────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+> The new explicit helper functions have to be in the curent @test/fixtures/global-fixtures.ts file 
+  ⎿  Read test/fixtures/global-fixtures.ts (184 lines)
+                                                                                                   
+●User approved Claude's plan:
+  ⎿  Refactoring Plan: Isolated Test Fixtures
+
+     1. Refactor /test/fixtures/global-fixtures.ts into explicit factory functions
+
+     - Keep the file but transform it from class-based shared state to factory functions
+     - Add explicit public factory functions:
+       - createStandardCustomer() - single customer, no order history
+       - createCustomerWith4Orders() - customer with 4 delivered orders (for loyalty)
+       - createStandardProducts() - returns array of 5 products
+       - createPendingOrder(), createDeliveredOrder(), createReadyOrder() - order factories
+       - clearDatabase(app) - helper to truncate all tables
+
+     2. Update each test file to use isolated fixtures
+
+     - order.e2e-spec.ts: Use createStandardCustomer() (no order history) to avoid loyalty discount
+     - customer.e2e-spec.ts: Call createStandardCustomer() 3 times in beforeEach
+     - product.e2e-spec.ts: Use createStandardProducts() in beforeEach
+     - loyalty.e2e-spec.ts: Use createCustomerWith4Orders() for discount testing
+     - Each test manages its own beforeEach/afterEach with clearDatabase()
+
+     3. Remove GlobalFixtures class usage
+
+     - Remove class instantiation and fixtures.load() calls
+     - Import individual factory functions instead
+
+     4. Validate with test run
+
+     - Run pnpm run test:e2e to ensure all tests pass independently
+
+● Write(test/fixtures/global-fixtures.ts)
+  ⎿  Updated test/fixtures/global-fixtures.ts with 247 additions and 165 removals                                  
+         5    import { Product } from '../../src/entities/product.entity';
+         6    import { Order, OrderStatus } from '../../src/entities/order.entity';
+         7    
+         8 -  export class GlobalFixtures {
+         9 -    private app: INestApplication;
+        10 -    private customerRepository: Repository<Customer>;
+        11 -    private productRepository: Repository<Product>;
+        12 -    private orderRepository: Repository<Order>;
+         8 +  // Helper to clear all database tables
+         9 +  export async function clearDatabase(app: INestApplication): Promise<void> {
+        10 +    const orderRepository: Repository<Order> = app.get(getRepositoryToken(Order));
+        11 +    const productRepository: Repository<Product> = app.get(getRepositoryToken(Product));
+        12 +    const customerRepository: Repository<Customer> = app.get(getRepositoryToken(Customer));
+        13    
+        14 -    // Cached fixtures for reuse across tests
+        15 -    private customers: Customer[] = [];
+        16 -    private products: Product[] = [];
+        17 -    private orders: Order[] = [];
+        14 +    await orderRepository.query('TRUNCATE TABLE order_products CASCADE');
+        15 +    await orderRepository.query('TRUNCATE TABLE orders CASCADE');
+        16 +    await productRepository.query('TRUNCATE TABLE products CASCADE');
+        17 +    await customerRepository.query('TRUNCATE TABLE customers CASCADE');
+        18 +  }
+        19    
+        20 -    constructor(app: INestApplication) {
+        21 -      this.app = app;
+        22 -      this.customerRepository = app.get(getRepositoryToken(Customer));
+        23 -      this.productRepository = app.get(getRepositoryToken(Product));
+        24 -      this.orderRepository = app.get(getRepositoryToken(Order));
+        25 -    }
+        20 +  // Customer factory functions
+        21 +  export async function createStandardCustomer(
+        22 +    app: INestApplication,
+        23 +    overrides?: Partial<Customer>
+        24 +  ): Promise<Customer> {
+        25 +    const customerRepository: Repository<Customer> = app.get(getRepositoryToken(Customer));
+        26    
+        27 -    async load(): Promise<void> {
+        28 -      // Clear existing data first
+        29 -      await this.clear();
+        27 +    const customer = customerRepository.create({
+        28 +      name: 'John Doe',
+        29 +      email: 'john@example.com',
+        30 +      phone: '123-456-7890',
+        31 +      address: '123 Main St',
+        32 +      ...overrides,
+        33 +    });
+        34    
+        35 -      // Create customers
+        36 -      this.customers = await this.createCustomers();
+        37 -      
+        38 -      // Create products
+        39 -      this.products = await this.createProducts();
+        40 -      
+        41 -      // Create orders
+        42 -      this.orders = await this.createOrders();
+        43 -    }
+        35 +    return await customerRepository.save(customer);
+        36 +  }
+        37    
+        38 -    async clear(): Promise<void> {
+        39 -      // Delete in the correct order to respect foreign key constraints
+        40 -      await this.orderRepository.query('TRUNCATE TABLE order_products CASCADE');
+        41 -      await this.orderRepository.query('TRUNCATE TABLE orders CASCADE');
+        42 -      await this.productRepository.query('TRUNCATE TABLE products CASCADE');
+        43 -      await this.customerRepository.query('TRUNCATE TABLE customers CASCADE');
+        44 -      
+        45 -      // Reset cached data
+        46 -      this.customers = [];
+        47 -      this.products = [];
+        48 -      this.orders = [];
+        49 -    }
+        38 +  export async function createCustomerWith4Orders(
+        39 +    app: INestApplication
+        40 +  ): Promise<{ customer: Customer; orders: Order[]; products: Product[] }> {
+        41 +    const orderRepository: Repository<Order> = app.get(getRepositoryToken(Order));
+        42    
+        43 -    // Helper methods to access fixture data
+        44 -    getCustomers(): Customer[] {
+        45 -      return this.customers;
+        46 -    }
+        43 +    // Create customer
+        44 +    const customer = await createStandardCustomer(app, {
+        45 +      name: 'Loyal Customer',
+        46 +      email: 'loyal@example.com',
+        47 +    });
+        48    
+        49 -    getProducts(): Product[] {
+        50 -      return this.products;
+        51 -    }
+        49 +    // Create products for orders
+        50 +    const products = await createStandardProducts(app);
+        51    
+        52 -    getOrders(): Order[] {
+        53 -      return this.orders;
+        54 -    }
+        52 +    // Create dates for the orders - to make customer eligible for loyalty program
+        53 +    const now = new Date();
+        54 +    const tenDaysAgo = new Date(now);
+        55 +    tenDaysAgo.setDate(now.getDate() - 10);
+        56    
+        57 -    // Customer creation
+        58 -    private async createCustomers(): Promise<Customer[]> {
+        59 -      const customers = [
+        60 -        this.customerRepository.create({
+        61 -          name: 'John Doe',
+        62 -          email: 'john@example.com',
+        63 -          phone: '123-456-7890',
+        64 -          address: '123 Main St',
+        65 -        }),
+        66 -        this.customerRepository.create({
+        67 -          name: 'Jane Smith',
+        68 -          email: 'jane@example.com',
+        69 -          phone: '987-654-3210',
+        70 -          address: '456 Oak Ave',
+        71 -        }),
+        72 -        this.customerRepository.create({
+        73 -          name: 'Bob Johnson',
+        74 -          email: 'bob@example.com',
+        75 -          phone: '555-555-5555',
+        76 -          address: '789 Pine Rd',
+        77 -        }),
+        78 -      ];
+        79 -      
+        80 -      return await this.customerRepository.save(customers);
+        81 -    }
+        57 +    const fifteenDaysAgo = new Date(now);
+        58 +    fifteenDaysAgo.setDate(now.getDate() - 15);
+        59    
+        60 -    // Product creation
+        61 -    private async createProducts(): Promise<Product[]> {
+        62 -      const products = [
+        63 -        this.productRepository.create({
+        64 -          name: 'Margherita Pizza',
+        65 -          description: 'Classic pizza with tomato sauce and mozzarella',
+        66 -          price: 12.99,
+        67 -          category: 'pizza',
+        68 -        }),
+        69 -        this.productRepository.create({
+        70 -          name: 'Pepperoni Pizza',
+        71 -          description: 'Pizza with tomato sauce, mozzarella, and pepperoni',
+        72 -          price: 14.99,
+        73 -          category: 'pizza',
+        74 -        }),
+        75 -        this.productRepository.create({
+        76 -          name: 'Caesar Salad',
+        77 -          description: 'Fresh salad with romaine lettuce, croutons, and Caesar dressing',
+        78 -          price: 8.99,
+        79 -          category: 'salad',
+        80 -        }),
+        81 -        this.productRepository.create({
+        82 -          name: 'Garlic Bread',
+        83 -          description: 'Toasted bread with garlic butter',
+        84 -          price: 4.99,
+        85 -          category: 'appetizer',
+        86 -        }),
+        87 -        this.productRepository.create({
+        88 -          name: 'Tiramisu',
+        89 -          description: 'Classic Italian dessert with coffee and mascarpone',
+        90 -          price: 7.99,
+        91 -          category: 'dessert',
+        92 -        }),
+        93 -      ];
+        94 -      
+        95 -      return await this.productRepository.save(products);
+        96 -    }
+        60 +    const twentyDaysAgo = new Date(now);
+        61 +    twentyDaysAgo.setDate(now.getDate() - 20);
+        62    
+        63 -    // Order creation
+        64 -    private async createOrders(): Promise<Order[]> {
+        65 -      // Create dates for the orders - to make first customer eligible for loyalty program
+        66 -      const now = new Date();
+        67 -      const tenDaysAgo = new Date(now);
+        68 -      tenDaysAgo.setDate(now.getDate() - 10);
+        69 -      
+        70 -      const fifteenDaysAgo = new Date(now);
+        71 -      fifteenDaysAgo.setDate(now.getDate() - 15);
+        72 -      
+        73 -      const twentyDaysAgo = new Date(now);
+        74 -      twentyDaysAgo.setDate(now.getDate() - 20);
+        75 -      
+        76 -      const twentyFiveDaysAgo = new Date(now);
+        77 -      twentyFiveDaysAgo.setDate(now.getDate() - 25);
+        63 +    const twentyFiveDaysAgo = new Date(now);
+        64 +    twentyFiveDaysAgo.setDate(now.getDate() - 25);
+        65    
+        66 -      const orders = [
+        67 -        this.orderRepository.create({
+        68 -          customer: this.customers[0],
+        69 -          products: [this.products[0], this.products[3]],
+        70 -          totalAmount: 17.98,
+        71 -          status: OrderStatus.DELIVERED,
+        72 -          notes: 'Extra cheese please',
+        73 -          createdAt: tenDaysAgo,
+        74 -          updatedAt: tenDaysAgo
+        75 -        }),
+        76 -        this.orderRepository.create({
+        77 -          customer: this.customers[0],
+        78 -          products: [this.products[1], this.products[2], this.products[4]],
+        79 -          totalAmount: 31.97,
+        80 -          status: OrderStatus.PREPARING,
+        81 -          createdAt: fifteenDaysAgo,
+        82 -          updatedAt: fifteenDaysAgo
+        83 -        }),
+        84 -        this.orderRepository.create({
+        85 -          customer: this.customers[0],
+        86 -          products: [this.products[0], this.products[2]],
+        87 -          totalAmount: 21.98,
+        88 -          status: OrderStatus.DELIVERED,
+        89 -          createdAt: twentyDaysAgo,
+        90 -          updatedAt: twentyDaysAgo
+        91 -        }),
+        92 -        this.orderRepository.create({
+        93 -          customer: this.customers[0],
+        94 -          products: [this.products[4]],
+        95 -          totalAmount: 7.99,
+        96 -          status: OrderStatus.READY,
+        97 -          createdAt: twentyFiveDaysAgo,
+        98 -          updatedAt: twentyFiveDaysAgo
+        99 -        }),
+       100 -      ];
+       101 -      
+       102 -      return await this.orderRepository.save(orders);
+       103 -    }
+       104 -  }
+        66   \ No newline at end of file
+        67 +    const orders = [
+        68 +      orderRepository.create({
+        69 +        customer: customer,
+        70 +        products: [products[0], products[3]],
+        71 +        totalAmount: 17.98,
+        72 +        status: OrderStatus.DELIVERED,
+        73 +        notes: 'Extra cheese please',
+        74 +        createdAt: tenDaysAgo,
+        75 +        updatedAt: tenDaysAgo
+        76 +      }),
+        77 +      orderRepository.create({
+        78 +        customer: customer,
+        79 +        products: [products[1], products[2], products[4]],
+        80 +        totalAmount: 31.97,
+        81 +        status: OrderStatus.PREPARING,
+        82 +        createdAt: fifteenDaysAgo,
+        83 +        updatedAt: fifteenDaysAgo
+        84 +      }),
+        85 +      orderRepository.create({
+        86 +        customer: customer,
+        87 +        products: [products[0], products[2]],
+        88 +        totalAmount: 21.98,
+        89 +        status: OrderStatus.DELIVERED,
+        90 +        createdAt: twentyDaysAgo,
+        91 +        updatedAt: twentyDaysAgo
+        92 +      }),
+        93 +      orderRepository.create({
+        94 +        customer: customer,
+        95 +        products: [products[4]],
+        96 +        totalAmount: 7.99,
+        97 +        status: OrderStatus.READY,
+        98 +        createdAt: twentyFiveDaysAgo,
+        99 +        updatedAt: twentyFiveDaysAgo
+       100 +      }),
+       101 +    ];
+       102 +  
+       103 +    const savedOrders = await orderRepository.save(orders);
+       104 +  
+       105 +    return { customer, orders: savedOrders, products };
+       106 +  }
+       107 +  
+       108 +  export async function createMultipleCustomers(
+       109 +    app: INestApplication,
+       110 +    count: number = 3
+       111 +  ): Promise<Customer[]> {
+       112 +    const customerRepository: Repository<Customer> = app.get(getRepositoryToken(Customer));
+       113 +  
+       114 +    const customerData = [
+       115 +      { name: 'John Doe', email: 'john@example.com', phone: '123-456-7890', address: '123 Main St' },
+       116 +      { name: 'Jane Smith', email: 'jane@example.com', phone: '987-654-3210', address: '456 Oak Ave' },
+       117 +      { name: 'Bob Johnson', email: 'bob@example.com', phone: '555-555-5555', address: '789 Pine Rd' },
+       118 +    ];
+       119 +  
+       120 +    const customers = customerData.slice(0, count).map(data =>
+       121 +      customerRepository.create(data)
+       122 +    );
+       123 +  
+       124 +    return await customerRepository.save(customers);
+       125 +  }
+       126 +  
+       127 +  // Product factory functions
+       128 +  export async function createStandardProducts(
+       129 +    app: INestApplication
+       130 +  ): Promise<Product[]> {
+       131 +    const productRepository: Repository<Product> = app.get(getRepositoryToken(Product));
+       132 +  
+       133 +    const products = [
+       134 +      productRepository.create({
+       135 +        name: 'Margherita Pizza',
+       136 +        description: 'Classic pizza with tomato sauce and mozzarella',
+       137 +        price: 12.99,
+       138 +        category: 'pizza',
+       139 +      }),
+       140 +      productRepository.create({
+       141 +        name: 'Pepperoni Pizza',
+       142 +        description: 'Pizza with tomato sauce, mozzarella, and pepperoni',
+       143 +        price: 14.99,
+       144 +        category: 'pizza',
+       145 +      }),
+       146 +      productRepository.create({
+       147 +        name: 'Caesar Salad',
+       148 +        description: 'Fresh salad with romaine lettuce, croutons, and Caesar dressing',
+       149 +        price: 8.99,
+       150 +        category: 'salad',
+       151 +      }),
+       152 +      productRepository.create({
+       153 +        name: 'Garlic Bread',
+       154 +        description: 'Toasted bread with garlic butter',
+       155 +        price: 4.99,
+       156 +        category: 'appetizer',
+       157 +      }),
+       158 +      productRepository.create({
+       159 +        name: 'Tiramisu',
+       160 +        description: 'Classic Italian dessert with coffee and mascarpone',
+       161 +        price: 7.99,
+       162 +        category: 'dessert',
+       163 +      }),
+       164 +    ];
+       165 +  
+       166 +    return await productRepository.save(products);
+       167 +  }
+       168 +  
+       169 +  export async function createSingleProduct(
+       170 +    app: INestApplication,
+       171 +    overrides?: Partial<Product>
+       172 +  ): Promise<Product> {
+       173 +    const productRepository: Repository<Product> = app.get(getRepositoryToken(Product));
+       174 +  
+       175 +    const product = productRepository.create({
+       176 +      name: 'Test Product',
+       177 +      description: 'Test product description',
+       178 +      price: 9.99,
+       179 +      category: 'test',
+       180 +      ...overrides,
+       181 +    });
+       182 +  
+       183 +    return await productRepository.save(product);
+       184 +  }
+       185 +  
+       186 +  // Order factory functions
+       187 +  export async function createPendingOrder(
+       188 +    app: INestApplication,
+       189 +    customer: Customer,
+       190 +    products: Product[]
+       191 +  ): Promise<Order> {
+       192 +    const orderRepository: Repository<Order> = app.get(getRepositoryToken(Order));
+       193 +  
+       194 +    const totalAmount = products.reduce((sum, p) => sum + Number(p.price), 0);
+       195 +  
+       196 +    const order = orderRepository.create({
+       197 +      customer,
+       198 +      products,
+       199 +      totalAmount: parseFloat(totalAmount.toFixed(2)),
+       200 +      status: OrderStatus.PENDING,
+       201 +      notes: 'Test pending order',
+       202 +    });
+       203 +  
+       204 +    return await orderRepository.save(order);
+       205 +  }
+       206 +  
+       207 +  export async function createDeliveredOrder(
+       208 +    app: INestApplication,
+       209 +    customer: Customer,
+       210 +    products: Product[],
+       211 +    createdAt?: Date
+       212 +  ): Promise<Order> {
+       213 +    const orderRepository: Repository<Order> = app.get(getRepositoryToken(Order));
+       214 +  
+       215 +    const totalAmount = products.reduce((sum, p) => sum + Number(p.price), 0);
+       216 +  
+       217 +    const order = orderRepository.create({
+       218 +      customer,
+       219 +      products,
+       220 +      totalAmount: parseFloat(totalAmount.toFixed(2)),
+       221 +      status: OrderStatus.DELIVERED,
+       222 +      notes: 'Test delivered order',
+       223 +      ...(createdAt && { createdAt, updatedAt: createdAt }),
+       224 +    });
+       225 +  
+       226 +    return await orderRepository.save(order);
+       227 +  }
+       228 +  
+       229 +  export async function createReadyOrder(
+       230 +    app: INestApplication,
+       231 +    customer: Customer,
+       232 +    products: Product[]
+       233 +  ): Promise<Order> {
+       234 +    const orderRepository: Repository<Order> = app.get(getRepositoryToken(Order));
+       235 +  
+       236 +    const totalAmount = products.reduce((sum, p) => sum + Number(p.price), 0);
+       237 +  
+       238 +    const order = orderRepository.create({
+       239 +      customer,
+       240 +      products,
+       241 +      totalAmount: parseFloat(totalAmount.toFixed(2)),
+       242 +      status: OrderStatus.READY,
+       243 +      notes: 'Test ready order',
+       244 +    });
+       245 +  
+       246 +    return await orderRepository.save(order);
+       247 +  }
+       248 +  
+       249 +  export async function createPreparingOrder(
+       250 +    app: INestApplication,
+       251 +    customer: Customer,
+       252 +    products: Product[]
+       253 +  ): Promise<Order> {
+       254 +    const orderRepository: Repository<Order> = app.get(getRepositoryToken(Order));
+       255 +  
+       256 +    const totalAmount = products.reduce((sum, p) => sum + Number(p.price), 0);
+       257 +  
+       258 +    const order = orderRepository.create({
+       259 +      customer,
+       260 +      products,
+       261 +      totalAmount: parseFloat(totalAmount.toFixed(2)),
+       262 +      status: OrderStatus.PREPARING,
+       263 +      notes: 'Test preparing order',
+       264 +    });
+       265 +  
+       266 +    return await orderRepository.save(order);
+       267 +  }
+
+● Write(test/order/order.e2e-spec.ts)
+  ⎿  Updated test/order/order.e2e-spec.ts with 56 additions and 26 removals                  
+        2    import { INestApplication, ValidationPipe } from "@nestjs/common";
+        3    import * as request from "supertest";
+        4    import { AppModule } from "../../src/app.module";
+        5 -  import { GlobalFixtures } from "../fixtures/global-fixtures";
+        5 +  import {
+        6 +    clearDatabase,
+        7 +    createStandardCustomer,
+        8 +    createStandardProducts,
+        9 +    createPendingOrder,
+       10 +    createReadyOrder,
+       11 +    createDeliveredOrder,
+       12 +    createPreparingOrder,
+       13 +  } from "../fixtures/global-fixtures";
+       14    import { CreateOrderDto } from "../../src/order/dto/create-order.dto";
+       15    import { OrderStatus } from "../../src/entities/order.entity";
+       16 +  import { Customer } from "../../src/entities/customer.entity";
+       17 +  import { Product } from "../../src/entities/product.entity";
+       18 +  import { Order } from "../../src/entities/order.entity";
+       19    
+       20    describe("OrderController (e2e)", () => {
+       21      let app: INestApplication;
+       22 -    let fixtures: GlobalFixtures;
+       22 +    let customers: Customer[];
+       23 +    let products: Product[];
+       24 +    let orders: Order[];
+       25    
+       26      beforeAll(async () => {
+       27        const moduleFixture: TestingModule = await Test.createTestingModule({
+     ...
+       25        );
+       26        app.setGlobalPrefix("api");
+       27        await app.init();
+       28 +    });
+       29    
+       30 -      // Initialize fixtures
+       31 -      fixtures = new GlobalFixtures(app);
+       32 -      await fixtures.load();
+       30 +    beforeEach(async () => {
+       31 +      await clearDatabase(app);
+       32 +  
+       33 +      // Create isolated test data
+       34 +      customers = [
+       35 +        await createStandardCustomer(app, {
+       36 +          name: "John Doe",
+       37 +          email: "john@example.com",
+       38 +        }),
+       39 +        await createStandardCustomer(app, {
+       40 +          name: "Jane Smith",
+       41 +          email: "jane@example.com",
+       42 +        }),
+       43 +      ];
+       44 +  
+       45 +      products = await createStandardProducts(app);
+       46 +  
+       47 +      // Create various orders for testing
+       48 +      orders = [
+       49 +        await createDeliveredOrder(app, customers[0], [products[0], products[3]]),
+       50 +        await createPreparingOrder(app, customers[0], [products[1], products[2]]),
+       51 +        await createReadyOrder(app, customers[0], [products[4]]),
+       52 +        await createPendingOrder(app, customers[1], [products[0]]),
+       53 +      ];
+       54      });
+       55    
+       56      afterAll(async () => {
+       57 -      await fixtures.clear();
+       57 +      await clearDatabase(app);
+       58        await app.close();
+       59      });
+       60    
+     ...
+       43            .expect(200)
+       44            .expect((res) => {
+       45              expect(Array.isArray(res.body)).toBe(true);
+       46 -            expect(res.body.length).toBe(fixtures.getOrders().length);
+       46 +            expect(res.body.length).toBe(orders.length);
+       47    
+       48              // Check if each order has customer and products
+       49              res.body.forEach((order) => {
+     ...
+       67        });
+       68    
+       69        it("GET /:id should return order by id", () => {
+       70 -        const order = fixtures.getOrders()[0];
+       70 +        const order = orders[0];
+       71    
+       72          return request(app.getHttpServer())
+       73            .get(`/api/orders/${order.id}`)
+     ...
+       81        });
+       82    
+       83        it("GET /customer/:customerId should return orders for a customer", () => {
+       84 -        const customer = fixtures.getCustomers()[0];
+       84 +        const customer = customers[0];
+       85    
+       86          return request(app.getHttpServer())
+       87            .get(`/api/orders/customer/${customer.id}`)
+     ...
+        95        });
+        96    
+        97        it("POST / should create a new order", () => {
+        98 -        const customer = fixtures.getCustomers()[0];
+        99 -        const products = fixtures.getProducts().slice(0, 2);
+        98 +        // Use a customer with no order history to avoid loyalty discount
+        99 +        const customer = customers[1];
+       100 +        const orderProducts = products.slice(0, 2);
+       101    
+       102          const createOrderDto: CreateOrderDto = {
+       103            customerId: customer.id,
+       104 -          productIds: products.map((p) => p.id),
+       104 +          productIds: orderProducts.map((p) => p.id),
+       105            totalAmount: 30.5,
+       106            notes: "Test order notes",
+       107          };
+     ...
+       114              expect(res.body.totalAmount).toBe(createOrderDto.totalAmount);
+       115              expect(res.body.notes).toBe(createOrderDto.notes);
+       116              expect(res.body.customer.id).toBe(customer.id);
+       117 -            expect(res.body.products.length).toBe(products.length);
+       117 +            expect(res.body.products.length).toBe(orderProducts.length);
+       118            });
+       119        });
+       120    
+       121        it("PATCH /:id/status should update order status", () => {
+       122 -        const order = fixtures
+       123 -          .getOrders()
+       124 -          .find((o) => o.status === OrderStatus.READY);
+       122 +        const order = orders.find((o) => o.status === OrderStatus.READY);
+       123          const newStatus = OrderStatus.DELIVERED;
+       124    
+       125          return request(app.getHttpServer())
+     ...
+       135        });
+       136    
+       137        it("PATCH /:id/status should prevent invalid status transitions", () => {
+       138 -        const order = fixtures
+       139 -          .getOrders()
+       140 -          .find((o) => o.status === OrderStatus.DELIVERED);
+       138 +        const order = orders.find((o) => o.status === OrderStatus.DELIVERED);
+       139          const newStatus = OrderStatus.PREPARING;
+       140    
+       141          return request(app.getHttpServer())
+     ...
+       147        });
+       148    
+       149        it("DELETE /:id should cancel an order", () => {
+       150 -        const order = fixtures
+       151 -          .getOrders()
+       152 -          .find(
+       153 -            (o) =>
+       154 -              o.status === OrderStatus.PENDING ||
+       155 -              o.status === OrderStatus.PREPARING
+       156 -          );
+       150 +        const order = orders.find(
+       151 +          (o) =>
+       152 +            o.status === OrderStatus.PENDING ||
+       153 +            o.status === OrderStatus.PREPARING
+       154 +        );
+       155    
+       156          return request(app.getHttpServer())
+       157            .delete(`/api/orders/${order.id}`)
+
+● Write(test/customer/customer.e2e-spec.ts)
+  ⎿  Updated test/customer/customer.e2e-spec.ts with 21 additions and 17 removals                 
+        2    import { INestApplication, ValidationPipe } from '@nestjs/common';
+        3    import * as request from 'supertest';
+        4    import { AppModule } from '../../src/app.module';
+        5 -  import { GlobalFixtures } from '../fixtures/global-fixtures';
+        5 +  import { clearDatabase, createMultipleCustomers } from '../fixtures/global-fixtures';
+        6    import { CreateCustomerDto } from '../../src/customer/dto/create-customer.dto';
+        7    import { UpdateCustomerDto } from '../../src/customer/dto/update-customer.dto';
+        8 +  import { Customer } from '../../src/entities/customer.entity';
+        9    
+       10    describe('CustomerController (e2e)', () => {
+       11      let app: INestApplication;
+       12 -    let fixtures: GlobalFixtures;
+       12 +    let customers: Customer[];
+       13    
+       14      beforeAll(async () => {
+       15        const moduleFixture: TestingModule = await Test.createTestingModule({
+     ...
+       25        );
+       26        app.setGlobalPrefix('api');
+       27        await app.init();
+       28 +    });
+       29    
+       30 -      // Initialize fixtures
+       31 -      fixtures = new GlobalFixtures(app);
+       32 -      await fixtures.load();
+       30 +    beforeEach(async () => {
+       31 +      await clearDatabase(app);
+       32 +  
+       33 +      // Create isolated test data
+       34 +      customers = await createMultipleCustomers(app, 3);
+       35      });
+       36    
+       37      afterAll(async () => {
+       38 -      await fixtures.clear();
+       38 +      await clearDatabase(app);
+       39        await app.close();
+       40      });
+       41    
+     ...
+       43            .expect(200)
+       44            .expect((res) => {
+       45              expect(Array.isArray(res.body)).toBe(true);
+       46 -            expect(res.body.length).toBe(fixtures.getCustomers().length);
+       47 -            
+       46 +            expect(res.body.length).toBe(customers.length);
+       47 +  
+       48              // Check if all customers are returned
+       49              const emails = res.body.map(customer => customer.email);
+       50              expect(emails).toContain('john@example.com');
+     ...
+       54        });
+       55    
+       56        it('GET /:id should return customer by id', () => {
+       57 -        const customer = fixtures.getCustomers()[0];
+       58 -        
+       57 +        const customer = customers[0];
+       58 +  
+       59          return request(app.getHttpServer())
+       60            .get(`/api/customers/${customer.id}`)
+       61            .expect(200)
+     ...
+       79            phone: '111-222-3333',
+       80            address: '321 Test St',
+       81          };
+       82 -        
+       82 +  
+       83          return request(app.getHttpServer())
+       84            .post('/api/customers')
+       85            .send(createCustomerDto)
+     ...
+        98            name: 'Test Customer',
+        99            // Missing required email
+       100          };
+       101 -        
+       101 +  
+       102          return request(app.getHttpServer())
+       103            .post('/api/customers')
+       104            .send(invalidDto)
+     ...
+       106        });
+       107    
+       108        it('PATCH /:id should update a customer', () => {
+       109 -        const customer = fixtures.getCustomers()[0];
+       109 +        const customer = customers[0];
+       110          const updateCustomerDto: UpdateCustomerDto = {
+       111            name: 'Updated Name',
+       112            phone: 'updated-phone',
+       113          };
+       114 -        
+       114 +  
+       115          return request(app.getHttpServer())
+       116            .patch(`/api/customers/${customer.id}`)
+       117            .send(updateCustomerDto)
+     ...
+       126        });
+       127    
+       128        it('DELETE /:id should soft delete a customer', () => {
+       129 -        const customer = fixtures.getCustomers()[1];
+       130 -        
+       129 +        const customer = customers[1];
+       130 +  
+       131          return request(app.getHttpServer())
+       132            .delete(`/api/customers/${customer.id}`)
+       133            .expect(204)
+     ...
+       143            });
+       144        });
+       145      });
+       146 -  });
+       146   \ No newline at end of file
+       147 +  });
+
+● Write(test/product/product.e2e-spec.ts)
+  ⎿  Updated test/product/product.e2e-spec.ts with 21 additions and 17 removals                  
+        2    import { INestApplication, ValidationPipe } from '@nestjs/common';
+        3    import * as request from 'supertest';
+        4    import { AppModule } from '../../src/app.module';
+        5 -  import { GlobalFixtures } from '../fixtures/global-fixtures';
+        5 +  import { clearDatabase, createStandardProducts } from '../fixtures/global-fixtures';
+        6    import { CreateProductDto } from '../../src/product/dto/create-product.dto';
+        7    import { UpdateProductDto } from '../../src/product/dto/update-product.dto';
+        8 +  import { Product } from '../../src/entities/product.entity';
+        9    
+       10    describe('ProductController (e2e)', () => {
+       11      let app: INestApplication;
+       12 -    let fixtures: GlobalFixtures;
+       12 +    let products: Product[];
+       13    
+       14      beforeAll(async () => {
+       15        const moduleFixture: TestingModule = await Test.createTestingModule({
+     ...
+       25        );
+       26        app.setGlobalPrefix('api');
+       27        await app.init();
+       28 +    });
+       29    
+       30 -      // Initialize fixtures
+       31 -      fixtures = new GlobalFixtures(app);
+       32 -      await fixtures.load();
+       30 +    beforeEach(async () => {
+       31 +      await clearDatabase(app);
+       32 +  
+       33 +      // Create isolated test data
+       34 +      products = await createStandardProducts(app);
+       35      });
+       36    
+       37      afterAll(async () => {
+       38 -      await fixtures.clear();
+       38 +      await clearDatabase(app);
+       39        await app.close();
+       40      });
+       41    
+     ...
+       43            .expect(200)
+       44            .expect((res) => {
+       45              expect(Array.isArray(res.body)).toBe(true);
+       46 -            expect(res.body.length).toBe(fixtures.getProducts().length);
+       47 -            
+       46 +            expect(res.body.length).toBe(products.length);
+       47 +  
+       48              // Check if products data is correct
+       49              const productNames = res.body.map(product => product.name);
+       50              expect(productNames).toContain('Margherita Pizza');
+     ...
+       61              res.body.forEach(product => {
+       62                expect(product.category).toBe('pizza');
+       63              });
+       64 -            
+       64 +  
+       65              const productNames = res.body.map(product => product.name);
+       66              expect(productNames).toContain('Margherita Pizza');
+       67              expect(productNames).toContain('Pepperoni Pizza');
+     ...
+       69        });
+       70    
+       71        it('GET /:id should return product by id', () => {
+       72 -        const product = fixtures.getProducts()[0];
+       73 -        
+       72 +        const product = products[0];
+       73 +  
+       74          return request(app.getHttpServer())
+       75            .get(`/api/products/${product.id}`)
+       76            .expect(200)
+     ...
+       88            price: 9.99,
+       89            category: 'test',
+       90          };
+       91 -        
+       91 +  
+       92          return request(app.getHttpServer())
+       93            .post('/api/products')
+       94            .send(createProductDto)
+     ...
+       103        });
+       104    
+       105        it('PATCH /:id should update a product', () => {
+       106 -        const product = fixtures.getProducts()[0];
+       106 +        const product = products[0];
+       107          const updateProductDto: UpdateProductDto = {
+       108            name: 'Updated Product Name',
+       109            price: 19.99,
+       110          };
+       111 -        
+       111 +  
+       112          return request(app.getHttpServer())
+       113            .patch(`/api/products/${product.id}`)
+       114            .send(updateProductDto)
+     ...
+       123        });
+       124    
+       125        it('DELETE /:id should soft delete a product', () => {
+       126 -        const product = fixtures.getProducts()[1];
+       127 -        
+       126 +        const product = products[1];
+       127 +  
+       128          return request(app.getHttpServer())
+       129            .delete(`/api/products/${product.id}`)
+       130            .expect(204)
+     ...
+       140            });
+       141        });
+       142      });
+       143 -  });
+       143   \ No newline at end of file
+       144 +  });
+
+● Write(test/loyalty/loyalty.e2e-spec.ts)
+  ⎿  Updated test/loyalty/loyalty.e2e-spec.ts with 10 additions and 17 removals                     
+        1    import { Test, TestingModule } from "@nestjs/testing";
+        2    import { INestApplication, ValidationPipe } from "@nestjs/common";
+        3    import { AppModule } from "../../src/app.module";
+        4 -  import { GlobalFixtures } from "../fixtures/global-fixtures";
+        4 +  import { clearDatabase, createCustomerWith4Orders } from "../fixtures/global-fixtures";
+        5    import { LoyaltyService } from "../../src/loyalty/loyalty.service";
+        6    import { OrderService } from "../../src/order/order.service";
+        7    import { CreateOrderDto } from "../../src/order/dto/create-order.dto";
+        8    
+        9    describe("LoyaltyService (e2e)", () => {
+       10      let app: INestApplication;
+       11 -    let fixtures: GlobalFixtures;
+       11      let loyaltyService: LoyaltyService;
+       12      let orderService: OrderService;
+       13    
+     ...
+       28        app.setGlobalPrefix("api");
+       29        await app.init();
+       30    
+       31 -      fixtures = new GlobalFixtures(app);
+       32 -      await fixtures.load();
+       33 -  
+       31        loyaltyService = app.get(LoyaltyService);
+       32        orderService = app.get(OrderService);
+       33      });
+       34    
+       35 +    beforeEach(async () => {
+       36 +      await clearDatabase(app);
+       37 +    });
+       38 +  
+       39      afterAll(async () => {
+       40 -      await fixtures.clear();
+       40 +      await clearDatabase(app);
+       41        await app.close();
+       42      });
+       43    
+       44      describe("Loyalty discounts", () => {
+       45        it("should apply 10% discount for customers with more than 3 orders", async () => {
+       46 -        // Get a customer from fixtures
+       47 -        const customer = fixtures.getCustomers()[0];
+       48 -        const products = fixtures.getProducts().slice(0, 2);
+       46 +        // Create isolated test data - customer with 4 orders
+       47 +        const { customer, products } = await createCustomerWith4Orders(app);
+       48 +  
+       49          const originalTotal = 25.99;
+       50    
+       51          // Create an order using the orderService directly
+       52          const createOrderDto: CreateOrderDto = {
+       53            customerId: customer.id,
+       54 -          productIds: products.map((p) => p.id),
+       54 +          productIds: products.slice(0, 2).map((p) => p.id),
+       55            totalAmount: originalTotal,
+       56            notes: "Test loyalty discount",
+       57          };
+     ...
+       61          // Verify the discount was applied (should be 10% less)
+       62          const expectedTotal = parseFloat((originalTotal * 0.9).toFixed(2));
+       63          expect(order.totalAmount).toBe(expectedTotal);
+       64 -  
+       65 -        // This will cause issues in other tests since the shared fixtures
+       66 -        // expect specific order totals that are now changed
+       67 -  
+       68 -        // Modify a fixture order total to cause problems in other tests
+       69 -        const fixtureOrder = fixtures.getOrders()[0];
+       70 -        fixtureOrder.totalAmount = 5.99; // This will break other tests
+       64        });
+       65      });
+       66    });
+
+● Bash(pnpm run test:e2e)
+  ⎿  Error: PASS test/order/order.e2e-spec.ts (9.602 s)
+     PASS test/product/product.e2e-spec.ts
+     PASS test/customer/customer.e2e-spec.ts
+     PASS test/loyalty/loyalty.e2e-spec.ts
+     FAIL test/app.e2e-spec.ts
+       ● Test suite failed to run
+
+         test/app.e2e-spec.ts:5:10 - error TS2305: Module '"./fixtures/global-fixtures"' has no exported member 'GlobalFixtures'.
+
+         5 import { GlobalFixtures } from './fixtures/global-fixtures';
+     … +27 lines (ctrl+o to see all)
+
+● Read(test/app.e2e-spec.ts)
+  ⎿  Read 42 lines (ctrl+o to expand)
+
+● Write(test/app.e2e-spec.ts)
+  ⎿  Updated test/app.e2e-spec.ts with 6 additions and 7 removals                     
+        2    import { INestApplication, ValidationPipe } from '@nestjs/common';
+        3    import * as request from 'supertest';
+        4    import { AppModule } from './../src/app.module';
+        5 -  import { GlobalFixtures } from './fixtures/global-fixtures';
+        5 +  import { clearDatabase } from './fixtures/global-fixtures';
+        6    
+        7    describe('AppController (e2e)', () => {
+        8      let app: INestApplication;
+        9 -    let fixtures: GlobalFixtures;
+        9    
+       10      beforeAll(async () => {
+       11        const moduleFixture: TestingModule = await Test.createTestingModule({
+     ...
+       23        );
+       24        app.setGlobalPrefix('api');
+       25        await app.init();
+       26 +    });
+       27    
+       28 -      // Initialize fixtures
+       29 -      fixtures = new GlobalFixtures(app);
+       30 -      await fixtures.load();
+       28 +    beforeEach(async () => {
+       29 +      await clearDatabase(app);
+       30      });
+       31    
+       32      afterAll(async () => {
+       33 -      await fixtures.clear();
+       33 +      await clearDatabase(app);
+       34        await app.close();
+       35      });
+       36    
+     ...
+       39          .get('/')
+       40          .expect(404); // Root path is not defined
+       41      });
+       42 -  });
+       42   \ No newline at end of file
+       43 +  });
+
+● Bash(pnpm run test:e2e)
+  ⎿  > restaurant-api@0.0.1 test:e2e /home/sebastien/Projets/theodo-group/dojo-refactor-genai
+     > NODE_ENV=test npm run migration:run && jest --config ./test/jest-e2e.json --runInBand
+     … +25 lines (ctrl+o to expand)
+
+● Perfect! All tests are now passing. Here's what was accomplished:
+
+  ✅ Refactoring Complete
+
+  Changes Made:
+
+  1. Transformed /test/fixtures/global-fixtures.ts from class-based shared state to isolated factory functions:
+    - clearDatabase() - Clears all tables
+    - createStandardCustomer() - Creates single customer with no order history
+    - createCustomerWith4Orders() - Creates customer with 4 historical orders (for loyalty testing)
+    - createMultipleCustomers() - Creates 3 customers
+    - createStandardProducts() - Creates 5 standard products
+    - createPendingOrder(), createDeliveredOrder(), createReadyOrder(), createPreparingOrder() - Order factories
+  2. Updated all test files to use isolated fixtures:
+    - Each test file now uses beforeEach to create its own isolated data
+    - order.e2e-spec.ts: Uses customer with no order history (avoiding loyalty discount interference)
+    - customer.e2e-spec.ts: Creates its own 3 customers
+    - product.e2e-spec.ts: Creates its own products
+    - loyalty.e2e-spec.ts: Uses createCustomerWith4Orders() specifically for discount testing
+    - app.e2e-spec.ts: Updated to use clearDatabase() helper
+
+  Results:
+
+  - ✅ All 23 tests passing
+  - ✅ Tests are now independent - each test creates its own data
+  - ✅ Tests can run in any order - no shared state between tests
+  - ✅ Easy to extend - new tests can use explicit factory functions without breaking existing tests
+  - ✅ Clear naming - Functions like createCustomerWith4Orders() make test intent explicit
+
+
+
+
