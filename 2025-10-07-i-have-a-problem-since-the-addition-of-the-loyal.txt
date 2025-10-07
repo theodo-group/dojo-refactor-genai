@@ -1,0 +1,1081 @@
+
+ ▐▛███▜▌   Claude Code v2.0.1
+▝▜█████▛▘  Sonnet 4.5 · API Usage Billing
+  ▘▘ ▝▝    /Users/theodo/code/theodo/dojo-refactor-genai
+
+> I have a problem : since the addition of the loyalty program to the application the @test/order/order.e2e-spec.ts fails, in particular the create order fails, which is not normal 
+since they should be independent. Investigate why this problem happens and dig to the root cause by asking chain whys. For example : my application crashes -> why ? because it can't 
+connect to my db -> why ? because I haven't started it -> why ? because i have to launch two separate commands to start my db and my application (root cause). Once we find the root 
+cause then you can propose a solution to address the root cause and design a plan to address it. 
+  ⎿  Read test/order/order.e2e-spec.ts (173 lines)
+
+⏺ I'll investigate why the order creation test is failing after the loyalty program was added. Let me start by exploring the codebase to understand what changed.
+
+⏺ Bash(git log --oneline --all | head -20)
+  ⎿  7d16527 chore: add discussion                                               
+     bf467f5 add discussion
+     d5b0187 refactor: decouple order e2e tests with factory methods and builders
+     … +17 lines (ctrl+o to expand)
+
+⏺ Search(pattern: "loyalty|discount")
+  ⎿  Found 9 files (ctrl+o to expand)
+
+⏺ Bash(npm test -- order.e2e-spec.ts 2>&1 | tail -100) timeout: 1m 0s
+  ⎿  Interrupted · What should Claude do instead?
+
+> Use pnpm instead 
+
+⏺ Bash(pnpm test -- order.e2e-spec.ts 2>&1 | tail -100) timeout: 1m 0s
+  ⎿  > restaurant-api@0.0.1 test /Users/theodo/code/theodo/dojo-refactor-genai
+     > jest "order.e2e-spec.ts"
+     … +9 lines (ctrl+o to expand)
+
+⏺ Read(package.json)
+  ⎿  Read 81 lines (ctrl+o to expand)
+
+⏺ Bash(pnpm test:e2e 2>&1 | tail -150)
+  ⎿  > restaurant-api@0.0.1 test:e2e /Users/theodo/code/theodo/dojo-refactor-genai          
+     > NODE_ENV=test npm run migration:run && jest --config ./test/jest-e2e.json --runInBand
+     … +50 lines (ctrl+o to expand)
+
+⏺ Perfect! I can see the issue now. The test expects totalAmount to be 30.5, but it's receiving 27.45 (which is 30.5 - 10% = 27.45). This indicates a loyalty discount is being
+  applied.
+
+  Let me investigate why this is happening:
+
+⏺ Read(src/order/order.service.ts)
+  ⎿  Read 149 lines (ctrl+o to expand)
+
+⏺ Read(src/loyalty/loyalty.service.ts)
+  ⎿  Read 34 lines (ctrl+o to expand)
+
+⏺ Read(src/order/order.module.ts)
+  ⎿  Read 21 lines (ctrl+o to expand)
+
+⏺ Now I can see the issue! Let me check the test fixtures to understand the customer's order history:
+
+⏺ Read(test/fixtures/global-fixtures.ts)
+  ⎿  Read 184 lines (ctrl+o to expand)
+
+⏺ Perfect! Now I can trace the root cause using the "5 Whys" analysis:
+
+  🔍 Root Cause Analysis (5 Whys)
+
+  Why 1: Why does the test fail?
+  → The test expects totalAmount to be 30.5, but receives 27.45
+
+  Why 2: Why is the totalAmount 27.45 instead of 30.5?
+  → A 10% loyalty discount is being applied (30.5 × 0.9 = 27.45)
+
+  Why 3: Why is the loyalty discount being applied?
+  → The OrderService.create() always calls loyaltyService.calculateNextOrderAmount() (order.service.ts:79-82), and the customer has >3 orders in the last month
+
+  Why 4: Why does the customer have >3 orders in the last month?
+  → The GlobalFixtures creates 4 orders for customers[0] (John Doe), all dated within the last 25 days (global-fixtures.ts:147-180)
+
+  Why 5: Why are the test fixtures set up to make the customer loyalty-eligible?
+  → Line 132 reveals: "// Create dates for the orders - to make first customer eligible for loyalty program". The fixtures were intentionally designed to test loyalty functionality.
+
+  🎯 ROOT CAUSE
+
+  Tight coupling through shared global state
+
+  The GlobalFixtures creates a customer with 4 recent orders specifically to test the loyalty program. However, this same fixture data is reused across ALL tests. When
+  order.e2e-spec.ts creates a new order using customers[0], the loyalty discount is automatically applied due to pre-existing orders, even though the order test shouldn't depend on
+  loyalty functionality.
+
+  The fundamental issues are:
+  1. Shared mutable state: All tests share the same GlobalFixtures
+  2. Hidden dependencies: Order tests have implicit dependencies on loyalty service behavior and customer order history
+  3. Lack of test isolation: Test behavior changes based on fixture data created for unrelated features
+
+  💡 Proposed Solutions
+
+  Option 1: Test Isolation (RECOMMENDED)
+
+  Address the root cause by isolating test data
+  - Create test-specific fixture methods (e.g., createCustomerWithoutOrderHistory())
+  - Or use a different customer (customers[1] or customers[2]) who doesn't have loyalty eligibility
+  - Ensures tests are truly independent
+
+  Option 2: Explicit Test Expectations
+
+  Make the test aware of loyalty behavior
+  - Calculate the expected amount dynamically based on the customer's loyalty status
+  - More realistic but makes the test more complex
+
+  Option 3: Mock LoyaltyService (Not Recommended for E2E)
+
+  - Mock the loyalty service in order tests
+  - Goes against E2E testing principles
+
+  I recommend Option 1 - specifically using a customer without order history (customers[1] or customers[2]) in the order creation test. This is the simplest fix that maintains test
+  isolation.
+  ⎿  User rejected Claude's plan:
+     ╭────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+     │ Fix the order creation test by using customers[1] (Jane Smith) instead of customers[0] (John Doe) in the test. Jane has no order history, so she won't trigger the loyalty         │
+     │ discount, making the test pass with the expected totalAmount of 30.5.                                                                                                              │
+     │                                                                                                                                                                                    │
+     │ This addresses the root cause of shared state by ensuring the order creation test uses a customer without loyalty eligibility.                                                     │
+     ╰────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+> This addresses the root cause for this problem in particular but we need to spread the fix to the whole codebase to ensure the problem never appears again. How to do this ? 
+
+⏺ You're absolutely right. Let me investigate the broader fixture architecture to propose a systemic solution:
+
+⏺ Search(pattern: "**/*.e2e-spec.ts")
+  ⎿  Found 5 files (ctrl+o to expand)
+
+⏺ Bash(find test/fixtures -type f -name "*.ts" 2>/dev/null)
+  ⎿  test/fixtures/global-fixtures.ts
+
+⏺ Search(pattern: "new GlobalFixtures|fixtures\.load\(\)|GlobalFixtures", output_mode: "content")
+  ⎿  Found 21 lines (ctrl+o to expand)
+
+⏺ Read(test/customer/customer.e2e-spec.ts)
+  ⎿  Read 146 lines (ctrl+o to expand)
+
+⏺ Read(test/loyalty/loyalty.e2e-spec.ts)
+  ⎿  Read 74 lines (ctrl+o to expand)
+
+⏺ Read(test/product/product.e2e-spec.ts)
+  ⎿  Read 143 lines (ctrl+o to expand)
+
+⏺ Excellent question! Looking at the code, I can see this is a systemic architectural problem affecting all test suites. Let me analyze the full scope:
+
+  🔍 Systemic Problems Identified
+
+  1. All 5 test suites share GlobalFixtures
+  2. Tests mutate shared state:
+    - customer.e2e-spec.ts deletes customers[1] (line 129)
+    - product.e2e-spec.ts deletes products[1] (line 126)
+    - loyalty.e2e-spec.ts even has a comment "This will cause issues in other tests" (line 65-66) and deliberately modifies fixture data!
+  3. Fixtures loaded once per suite (beforeAll) not per test
+  4. Hidden cross-feature dependencies: Order behavior now depends on Loyalty service, Customer deletion affects Order tests, etc.
+
+  🎯 Systemic Solutions
+
+  Option A: Factory/Builder Pattern (RECOMMENDED)
+
+  Create reusable factory functions to let each test build its own isolated data.
+
+  Advantages:
+  - ✅ Complete test isolation
+  - ✅ Tests are self-documenting (you see what data they need)
+  - ✅ New features can't break existing tests
+  - ✅ No hidden dependencies
+
+  Structure:
+  test/
+  ├── factories/
+  │   ├── customer.factory.ts    # createCustomer(), createCustomerWithOrders()
+  │   ├── product.factory.ts     # createProduct(), createProducts()
+  │   ├── order.factory.ts       # createOrder(), createOrderForCustomer()
+  │   └── index.ts              # Export all factories
+  └── [test-files].e2e-spec.ts  # Use factories instead of GlobalFixtures
+
+  Example usage:
+  it('POST / should create order without loyalty discount', async () => {
+    // Each test creates only what it needs
+    const customer = await createCustomer(app); // No order history
+    const products = await createProducts(app, 2);
+
+    const order = await createOrder(app, {
+      customerId: customer.id,
+      productIds: products.map(p => p.id),
+      totalAmount: 30.5
+    });
+
+    expect(order.totalAmount).toBe(30.5); // No discount applied
+  });
+
+  Option B: Per-Test Fixture Reset
+
+  Keep GlobalFixtures but reload data before each test (beforeEach)
+
+  Advantages:
+  - ✅ Simpler migration (keep existing fixtures)
+  - ✅ Tests can't affect each other
+
+  Disadvantages:
+  - ❌ Slower (reloads all data for every test)
+  - ❌ Still has hidden dependencies
+  - ❌ Can't customize fixtures per test
+
+  Option C: Minimal Fixtures + Factories (HYBRID)
+
+  Create minimal base fixtures + factories for test-specific data
+
+  Advantages:
+  - ✅ Fast (minimal base data)
+  - ✅ Flexible (factories for specific needs)
+  - ✅ Good balance
+
+  ---
+  📋 Recommended Implementation Plan
+
+  I recommend Option A (Factory Pattern) because it:
+  1. Prevents this issue forever: Tests create their own data
+  2. Makes tests readable: You see exactly what data each test needs
+  3. Eliminates hidden dependencies: Each test is independent
+  4. Scales well: New features don't break old tests
+                                                                                                 
+⏺ User approved Claude's plan:
+  ⎿  Implement Factory/Builder Pattern for test isolation:
+
+     1. Create factory functions in test/factories/:
+       - customer.factory.ts: createCustomer(), createCustomerWithOrders()
+       - product.factory.ts: createProduct(), createProducts()  
+       - order.factory.ts: createOrder()
+       - index.ts: Central export
+     2. Add cleanup utilities:
+       - test/utils/database-cleaner.ts: Helper to truncate tables between tests
+     3. Refactor test suites one by one:
+       - Replace GlobalFixtures with factory functions
+       - Add beforeEach cleanup for true isolation
+       - Start with order.e2e-spec.ts as proof-of-concept
+     4. Remove GlobalFixtures once all tests migrated
+
+     This ensures tests are independent, self-documenting, and future-proof against new features.
+
+⏺ Write(test/factories/customer.factory.ts)
+  ⎿  Wrote 51 lines to test/factories/customer.factory.ts          
+     import { INestApplication } from '@nestjs/common';
+     import { getRepositoryToken } from '@nestjs/typeorm';
+     import { Repository } from 'typeorm';
+     import { Customer } from '../../src/entities/customer.entity';
+     export interface CreateCustomerOptions {
+       name?: string;
+       email?: string;
+       phone?: string;
+       address?: string;
+     … +41 lines (ctrl+o to expand)
+
+⏺ Write(test/factories/product.factory.ts)
+  ⎿  Wrote 51 lines to test/factories/product.factory.ts         
+     import { INestApplication } from '@nestjs/common';
+     import { getRepositoryToken } from '@nestjs/typeorm';
+     import { Repository } from 'typeorm';
+     import { Product } from '../../src/entities/product.entity';
+     export interface CreateProductOptions {
+       name?: string;
+       description?: string;
+       price?: number;
+       category?: string;
+     … +41 lines (ctrl+o to expand)
+
+⏺ Write(test/factories/order.factory.ts)
+  ⎿  Wrote 98 lines to test/factories/order.factory.ts                    
+     import { INestApplication } from '@nestjs/common';
+     import { getRepositoryToken } from '@nestjs/typeorm';
+     import { Repository } from 'typeorm';
+     import { Order, OrderStatus } from '../../src/entities/order.entity';
+     import { Customer } from '../../src/entities/customer.entity';
+     import { Product } from '../../src/entities/product.entity';
+     export interface CreateOrderOptions {
+       customer?: Customer;
+       products?: Product[];
+     … +88 lines (ctrl+o to expand)
+
+⏺ Write(test/factories/index.ts)
+  ⎿  Wrote 4 lines to test/factories/index.ts
+     export * from './customer.factory';
+     export * from './product.factory';
+     export * from './order.factory';
+
+⏺ Write(test/utils/database-cleaner.ts)
+  ⎿  Wrote 29 lines to test/utils/database-cleaner.ts                    
+     import { INestApplication } from '@nestjs/common';
+     import { getRepositoryToken } from '@nestjs/typeorm';
+     import { Repository } from 'typeorm';
+     import { Order } from '../../src/entities/order.entity';
+     import { Product } from '../../src/entities/product.entity';
+     import { Customer } from '../../src/entities/customer.entity';
+     /**
+      * Clears all test data from the database
+      * Respects foreign key constraints by deleting in the correct order
+     … +19 lines (ctrl+o to expand)
+
+⏺ Update(test/order/order.e2e-spec.ts)
+  ⎿  Updated test/order/order.e2e-spec.ts with 10 additions and 1 removal          
+        2    import { INestApplication, ValidationPipe } from "@nestjs/common";
+        3    import * as request from "supertest";
+        4    import { AppModule } from "../../src/app.module";
+        5 -  import { GlobalFixtures } from "../fixtures/global-fixtures";
+        5    import { CreateOrderDto } from "../../src/order/dto/create-order.dto";
+        6    import { OrderStatus } from "../../src/entities/order.entity";
+        7 +  import {
+        8 +    createCustomer,
+        9 +    createProduct,
+       10 +    createProducts,
+       11 +    createOrder,
+       12 +    createOrdersWithHistory,
+       13 +  } from "../factories";
+       14 +  import { cleanDatabase } from "../utils/database-cleaner";
+       15 +  import { Customer } from "../../src/entities/customer.entity";
+       16 +  import { Product } from "../../src/entities/product.entity";
+       17    
+       18    describe("OrderController (e2e)", () => {
+       19      let app: INestApplication;
+
+⏺ Update(test/order/order.e2e-spec.ts)
+  ⎿  Updated test/order/order.e2e-spec.ts with 14 additions and 5 removals            
+       17    
+       18    describe("OrderController (e2e)", () => {
+       19      let app: INestApplication;
+       20 -    let fixtures: GlobalFixtures;
+       20 +    let customer: Customer;
+       21 +    let products: Product[];
+       22    
+       23      beforeAll(async () => {
+       24        const moduleFixture: TestingModule = await Test.createTestingModule({
+     ...
+       34        );
+       35        app.setGlobalPrefix("api");
+       36        await app.init();
+       37 +    });
+       38    
+       39 -      // Initialize fixtures
+       40 -      fixtures = new GlobalFixtures(app);
+       41 -      await fixtures.load();
+       39 +    beforeEach(async () => {
+       40 +      // Clean database before each test for isolation
+       41 +      await cleanDatabase(app);
+       42 +  
+       43 +      // Create base test data
+       44 +      customer = await createCustomer(app, {
+       45 +        name: "John Doe",
+       46 +        email: "john@example.com",
+       47 +      });
+       48 +      products = await createProducts(app, 3);
+       49      });
+       50    
+       51      afterAll(async () => {
+       52 -      await fixtures.clear();
+       52 +      await cleanDatabase(app);
+       53        await app.close();
+       54      });
+       55    
+
+⏺ Update(test/order/order.e2e-spec.ts)
+  ⎿  Updated test/order/order.e2e-spec.ts with 14 additions and 2 removals       
+       55      });
+       56    
+       57      describe("/api/orders", () => {
+       58 -      it("GET / should return all orders", () => {
+       58 +      it("GET / should return all orders", async () => {
+       59 +        // Create some test orders
+       60 +        await createOrder(app, {
+       61 +          customer,
+       62 +          products: [products[0]],
+       63 +          totalAmount: 10.0,
+       64 +        });
+       65 +        await createOrder(app, {
+       66 +          customer,
+       67 +          products: [products[1]],
+       68 +          totalAmount: 20.0,
+       69 +        });
+       70 +  
+       71          return request(app.getHttpServer())
+       72            .get("/api/orders")
+       73            .expect(200)
+       74            .expect((res) => {
+       75              expect(Array.isArray(res.body)).toBe(true);
+       76 -            expect(res.body.length).toBe(fixtures.getOrders().length);
+       76 +            expect(res.body.length).toBe(2);
+       77    
+       78              // Check if each order has customer and products
+       79              res.body.forEach((order) => {
+
+⏺ Update(test/order/order.e2e-spec.ts)
+  ⎿  Updated test/order/order.e2e-spec.ts with 16 additions and 1 removal                
+        84            });
+        85        });
+        86    
+        87 -      it("GET /?status=pending should filter orders by status", () => {
+        87 +      it("GET /?status=pending should filter orders by status", async () => {
+        88 +        // Create orders with different statuses
+        89 +        await createOrder(app, {
+        90 +          customer,
+        91 +          products: [products[0]],
+        92 +          totalAmount: 10.0,
+        93 +          status: OrderStatus.PENDING,
+        94 +        });
+        95 +        await createOrder(app, {
+        96 +          customer,
+        97 +          products: [products[1]],
+        98 +          totalAmount: 20.0,
+        99 +          status: OrderStatus.DELIVERED,
+       100 +        });
+       101 +  
+       102          return request(app.getHttpServer())
+       103            .get("/api/orders?status=pending")
+       104            .expect(200)
+       105            .expect((res) => {
+       106              expect(Array.isArray(res.body)).toBe(true);
+       107 +            expect(res.body.length).toBe(1);
+       108              res.body.forEach((order) => {
+       109                expect(order.status).toBe("pending");
+       110              });
+
+⏺ Update(test/order/order.e2e-spec.ts)
+  ⎿  Updated test/order/order.e2e-spec.ts with 8 additions and 3 removals    
+       111            });
+       112        });
+       113    
+       114 -      it("GET /:id should return order by id", () => {
+       115 -        const order = fixtures.getOrders()[0];
+       114 +      it("GET /:id should return order by id", async () => {
+       115 +        const order = await createOrder(app, {
+       116 +          customer,
+       117 +          products: [products[0]],
+       118 +          totalAmount: 15.0,
+       119 +          status: OrderStatus.PENDING,
+       120 +        });
+       121    
+       122          return request(app.getHttpServer())
+       123            .get(`/api/orders/${order.id}`)
+     ...
+       120            .expect((res) => {
+       121              expect(res.body.id).toBe(order.id);
+       122              expect(res.body.status).toBe(order.status);
+       123 -            expect(res.body.customer.id).toBe(order.customer.id);
+       123 +            expect(res.body.customer.id).toBe(customer.id);
+       124              expect(Array.isArray(res.body.products)).toBe(true);
+       125            });
+       126        });
+
+⏺ Update(test/order/order.e2e-spec.ts)
+  ⎿  Updated test/order/order.e2e-spec.ts with 24 additions and 2 removals                         
+       130            });
+       131        });
+       132    
+       133 -      it("GET /customer/:customerId should return orders for a customer", () => {
+       134 -        const customer = fixtures.getCustomers()[0];
+       133 +      it("GET /customer/:customerId should return orders for a customer", async () => {
+       134 +        // Create orders for this customer
+       135 +        await createOrder(app, {
+       136 +          customer,
+       137 +          products: [products[0]],
+       138 +          totalAmount: 10.0,
+       139 +        });
+       140 +        await createOrder(app, {
+       141 +          customer,
+       142 +          products: [products[1]],
+       143 +          totalAmount: 20.0,
+       144 +        });
+       145    
+       146 +        // Create order for different customer
+       147 +        const otherCustomer = await createCustomer(app, {
+       148 +          name: "Jane Doe",
+       149 +          email: "jane@example.com",
+       150 +        });
+       151 +        await createOrder(app, {
+       152 +          customer: otherCustomer,
+       153 +          products: [products[2]],
+       154 +          totalAmount: 30.0,
+       155 +        });
+       156 +  
+       157          return request(app.getHttpServer())
+       158            .get(`/api/orders/customer/${customer.id}`)
+       159            .expect(200)
+       160            .expect((res) => {
+       161              expect(Array.isArray(res.body)).toBe(true);
+       162 +            expect(res.body.length).toBe(2);
+       163              res.body.forEach((order) => {
+       164                expect(order.customer.id).toBe(customer.id);
+       165              });
+
+⏺ Update(test/order/order.e2e-spec.ts)
+  ⎿  Updated test/order/order.e2e-spec.ts with 3 additions and 5 removals             
+       167        });
+       168    
+       169        it("POST / should create a new order", () => {
+       170 -        const customer = fixtures.getCustomers()[0];
+       171 -        const products = fixtures.getProducts().slice(0, 2);
+       172 -  
+       170 +        // Use customer with NO order history to avoid loyalty discount
+       171          const createOrderDto: CreateOrderDto = {
+       172            customerId: customer.id,
+       173 -          productIds: products.map((p) => p.id),
+       173 +          productIds: products.slice(0, 2).map((p) => p.id),
+       174            totalAmount: 30.5,
+       175            notes: "Test order notes",
+       176          };
+     ...
+       186              expect(res.body.totalAmount).toBe(createOrderDto.totalAmount);
+       187              expect(res.body.notes).toBe(createOrderDto.notes);
+       188              expect(res.body.customer.id).toBe(customer.id);
+       189 -            expect(res.body.products.length).toBe(products.length);
+       189 +            expect(res.body.products.length).toBe(2);
+       190            });
+       191        });
+       192    
+
+⏺ Update(test/order/order.e2e-spec.ts)
+  ⎿  Updated test/order/order.e2e-spec.ts with 7 additions and 4 removals         
+       188            });
+       189        });
+       190    
+       191 -      it("PATCH /:id/status should update order status", () => {
+       192 -        const order = fixtures
+       193 -          .getOrders()
+       194 -          .find((o) => o.status === OrderStatus.READY);
+       191 +      it("PATCH /:id/status should update order status", async () => {
+       192 +        const order = await createOrder(app, {
+       193 +          customer,
+       194 +          products: [products[0]],
+       195 +          totalAmount: 15.0,
+       196 +          status: OrderStatus.READY,
+       197 +        });
+       198          const newStatus = OrderStatus.DELIVERED;
+       199    
+       200          return request(app.getHttpServer())
+
+⏺ Update(test/order/order.e2e-spec.ts)
+  ⎿  Updated test/order/order.e2e-spec.ts with 7 additions and 4 removals                        
+       207            });
+       208        });
+       209    
+       210 -      it("PATCH /:id/status should prevent invalid status transitions", () => {
+       211 -        const order = fixtures
+       212 -          .getOrders()
+       213 -          .find((o) => o.status === OrderStatus.DELIVERED);
+       210 +      it("PATCH /:id/status should prevent invalid status transitions", async () => {
+       211 +        const order = await createOrder(app, {
+       212 +          customer,
+       213 +          products: [products[0]],
+       214 +          totalAmount: 15.0,
+       215 +          status: OrderStatus.DELIVERED,
+       216 +        });
+       217          const newStatus = OrderStatus.PREPARING;
+       218    
+       219          return request(app.getHttpServer())
+
+⏺ Update(test/order/order.e2e-spec.ts)
+  ⎿  Updated test/order/order.e2e-spec.ts with 7 additions and 8 removals
+       222            .expect(400);
+       223        });
+       224    
+       225 -      it("DELETE /:id should cancel an order", () => {
+       226 -        const order = fixtures
+       227 -          .getOrders()
+       228 -          .find(
+       229 -            (o) =>
+       230 -              o.status === OrderStatus.PENDING ||
+       231 -              o.status === OrderStatus.PREPARING
+       232 -          );
+       225 +      it("DELETE /:id should cancel an order", async () => {
+       226 +        const order = await createOrder(app, {
+       227 +          customer,
+       228 +          products: [products[0]],
+       229 +          totalAmount: 15.0,
+       230 +          status: OrderStatus.PENDING,
+       231 +        });
+       232    
+       233          return request(app.getHttpServer())
+       234            .delete(`/api/orders/${order.id}`)
+
+⏺ Perfect! Now let me run the order tests to verify they work with the new factory pattern:
+
+⏺ Bash(pnpm test:e2e:order/order.e2e-spec 2>&1 | tail -100)
+  ⎿  undefined                                                                             
+      ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL  Command "test:e2e:order/order.e2e-spec" not found
+
+⏺ Bash(pnpm test:e2e -- --testPathPattern=order.e2e-spec 2>&1)
+  ⎿  Error: > restaurant-api@0.0.1 test:e2e /Users/theodo/code/theodo/dojo-refactor-genai
+     > NODE_ENV=test npm run migration:run && jest --config ./test/jest-e2e.json --runInBand "--" "--testPathPattern=order.e2e-spec"
+
+
+     > restaurant-api@0.0.1 migration:run
+     > npm run typeorm -- -d src/config/typeorm.config.ts migration:run
+
+
+     > restaurant-api@0.0.1 typeorm
+     > ts-node -r tsconfig-paths/register ./node_modules/typeorm/cli.js -d src/config/typeorm.config.ts migration:run
+     … +16 lines (ctrl+o to see all)
+
+⏺ Read(test/jest-e2e.json)
+  ⎿  Read 9 lines (ctrl+o to expand)
+
+⏺ Bash(pnpm test:e2e 2>&1 | tail -150)
+  ⎿  > restaurant-api@0.0.1 test:e2e /Users/theodo/code/theodo/dojo-refactor-genai          
+     > NODE_ENV=test npm run migration:run && jest --config ./test/jest-e2e.json --runInBand
+     … +26 lines (ctrl+o to expand)
+
+⏺ Excellent! All tests pass, including the order test that was failing before. The factory pattern ensures complete test isolation. Let me continue refactoring the remaining test
+  files:
+
+⏺ Update(test/customer/customer.e2e-spec.ts)
+  ⎿  Updated test/customer/customer.e2e-spec.ts with 3 additions and 1 removal              
+        2    import { INestApplication, ValidationPipe } from '@nestjs/common';
+        3    import * as request from 'supertest';
+        4    import { AppModule } from '../../src/app.module';
+        5 -  import { GlobalFixtures } from '../fixtures/global-fixtures';
+        5    import { CreateCustomerDto } from '../../src/customer/dto/create-customer.dto';
+        6    import { UpdateCustomerDto } from '../../src/customer/dto/update-customer.dto';
+        7 +  import { createCustomer, createCustomers } from '../factories';
+        8 +  import { cleanDatabase } from '../utils/database-cleaner';
+        9 +  import { Customer } from '../../src/entities/customer.entity';
+       10    
+       11    describe('CustomerController (e2e)', () => {
+       12      let app: INestApplication;
+
+⏺ Update(test/customer/customer.e2e-spec.ts)
+  ⎿  Updated test/customer/customer.e2e-spec.ts with 14 additions and 5 removals      
+       10    
+       11    describe('CustomerController (e2e)', () => {
+       12      let app: INestApplication;
+       13 -    let fixtures: GlobalFixtures;
+       13 +    let customers: Customer[];
+       14    
+       15      beforeAll(async () => {
+       16        const moduleFixture: TestingModule = await Test.createTestingModule({
+     ...
+       27        );
+       28        app.setGlobalPrefix('api');
+       29        await app.init();
+       30 +    });
+       31    
+       32 -      // Initialize fixtures
+       33 -      fixtures = new GlobalFixtures(app);
+       34 -      await fixtures.load();
+       32 +    beforeEach(async () => {
+       33 +      await cleanDatabase(app);
+       34 +  
+       35 +      // Create base test customers
+       36 +      customers = await createCustomers(app, 3);
+       37 +      customers[0].name = 'John Doe';
+       38 +      customers[0].email = 'john@example.com';
+       39 +      customers[1].name = 'Jane Smith';
+       40 +      customers[1].email = 'jane@example.com';
+       41 +      customers[2].name = 'Bob Johnson';
+       42 +      customers[2].email = 'bob@example.com';
+       43      });
+       44    
+       45      afterAll(async () => {
+       46 -      await fixtures.clear();
+       46 +      await cleanDatabase(app);
+       47        await app.close();
+       48      });
+       49    
+
+⏺ Update(test/customer/customer.e2e-spec.ts)
+  ⎿  Updated test/customer/customer.e2e-spec.ts with 2 additions and 2 removals     
+       54            .expect(200)
+       55            .expect((res) => {
+       56              expect(Array.isArray(res.body)).toBe(true);
+       57 -            expect(res.body.length).toBe(fixtures.getCustomers().length);
+       58 -            
+       57 +            expect(res.body.length).toBe(3);
+       58 +  
+       59              // Check if all customers are returned
+       60              const emails = res.body.map(customer => customer.email);
+       61              expect(emails).toContain('john@example.com');
+
+⏺ Update(test/customer/customer.e2e-spec.ts)
+  ⎿  Updated test/customer/customer.e2e-spec.ts with 2 additions and 2 removals
+       65        });
+       66    
+       67        it('GET /:id should return customer by id', () => {
+       68 -        const customer = fixtures.getCustomers()[0];
+       69 -        
+       68 +        const customer = customers[0];
+       69 +  
+       70          return request(app.getHttpServer())
+       71            .get(`/api/customers/${customer.id}`)
+       72            .expect(200)
+
+⏺ Update(test/customer/customer.e2e-spec.ts)
+  ⎿  Updated test/customer/customer.e2e-spec.ts with 2 additions and 2 removals
+       117        });
+       118    
+       119        it('PATCH /:id should update a customer', () => {
+       120 -        const customer = fixtures.getCustomers()[0];
+       120 +        const customer = customers[0];
+       121          const updateCustomerDto: UpdateCustomerDto = {
+       122            name: 'Updated Name',
+       123            phone: 'updated-phone',
+       124          };
+       125 -        
+       125 +  
+       126          return request(app.getHttpServer())
+       127            .patch(`/api/customers/${customer.id}`)
+       128            .send(updateCustomerDto)
+
+⏺ Update(test/customer/customer.e2e-spec.ts)
+  ⎿  Updated test/customer/customer.e2e-spec.ts with 2 additions and 2 removals
+       137        });
+       138    
+       139        it('DELETE /:id should soft delete a customer', () => {
+       140 -        const customer = fixtures.getCustomers()[1];
+       141 -        
+       140 +        const customer = customers[1];
+       141 +  
+       142          return request(app.getHttpServer())
+       143            .delete(`/api/customers/${customer.id}`)
+       144            .expect(204)
+
+⏺ Update(test/product/product.e2e-spec.ts)
+  ⎿  Updated test/product/product.e2e-spec.ts with 3 additions and 1 removal             
+        2    import { INestApplication, ValidationPipe } from '@nestjs/common';
+        3    import * as request from 'supertest';
+        4    import { AppModule } from '../../src/app.module';
+        5 -  import { GlobalFixtures } from '../fixtures/global-fixtures';
+        5    import { CreateProductDto } from '../../src/product/dto/create-product.dto';
+        6    import { UpdateProductDto } from '../../src/product/dto/update-product.dto';
+        7 +  import { createProduct, createProducts } from '../factories';
+        8 +  import { cleanDatabase } from '../utils/database-cleaner';
+        9 +  import { Product } from '../../src/entities/product.entity';
+       10    
+       11    describe('ProductController (e2e)', () => {
+       12      let app: INestApplication;
+
+⏺ Update(test/product/product.e2e-spec.ts)
+  ⎿  Updated test/product/product.e2e-spec.ts with 27 additions and 5 removals                      
+       10    
+       11    describe('ProductController (e2e)', () => {
+       12      let app: INestApplication;
+       13 -    let fixtures: GlobalFixtures;
+       13 +    let products: Product[];
+       14    
+       15      beforeAll(async () => {
+       16        const moduleFixture: TestingModule = await Test.createTestingModule({
+     ...
+       27        );
+       28        app.setGlobalPrefix('api');
+       29        await app.init();
+       30 +    });
+       31    
+       32 -      // Initialize fixtures
+       33 -      fixtures = new GlobalFixtures(app);
+       34 -      await fixtures.load();
+       32 +    beforeEach(async () => {
+       33 +      await cleanDatabase(app);
+       34 +  
+       35 +      // Create test products
+       36 +      products = [
+       37 +        await createProduct(app, {
+       38 +          name: 'Margherita Pizza',
+       39 +          description: 'Classic pizza with tomato sauce and mozzarella',
+       40 +          price: 12.99,
+       41 +          category: 'pizza',
+       42 +        }),
+       43 +        await createProduct(app, {
+       44 +          name: 'Pepperoni Pizza',
+       45 +          description: 'Pizza with tomato sauce, mozzarella, and pepperoni',
+       46 +          price: 14.99,
+       47 +          category: 'pizza',
+       48 +        }),
+       49 +        await createProduct(app, {
+       50 +          name: 'Caesar Salad',
+       51 +          description: 'Fresh salad with romaine lettuce, croutons, and Caesar dressing',
+       52 +          price: 8.99,
+       53 +          category: 'salad',
+       54 +        }),
+       55 +      ];
+       56      });
+       57    
+       58      afterAll(async () => {
+       59 -      await fixtures.clear();
+       59 +      await cleanDatabase(app);
+       60        await app.close();
+       61      });
+       62    
+
+⏺ Update(test/product/product.e2e-spec.ts)
+  ⎿  Updated test/product/product.e2e-spec.ts with 2 additions and 2 removals      
+       67            .expect(200)
+       68            .expect((res) => {
+       69              expect(Array.isArray(res.body)).toBe(true);
+       70 -            expect(res.body.length).toBe(fixtures.getProducts().length);
+       71 -            
+       70 +            expect(res.body.length).toBe(3);
+       71 +  
+       72              // Check if products data is correct
+       73              const productNames = res.body.map(product => product.name);
+       74              expect(productNames).toContain('Margherita Pizza');
+
+⏺ Update(test/product/product.e2e-spec.ts)
+  ⎿  Updated test/product/product.e2e-spec.ts with 2 additions and 2 removals
+        93        });
+        94    
+        95        it('GET /:id should return product by id', () => {
+        96 -        const product = fixtures.getProducts()[0];
+        97 -        
+        96 +        const product = products[0];
+        97 +  
+        98          return request(app.getHttpServer())
+        99            .get(`/api/products/${product.id}`)
+       100            .expect(200)
+
+⏺ Update(test/product/product.e2e-spec.ts)
+  ⎿  Updated test/product/product.e2e-spec.ts with 2 additions and 2 removals
+       127        });
+       128    
+       129        it('PATCH /:id should update a product', () => {
+       130 -        const product = fixtures.getProducts()[0];
+       130 +        const product = products[0];
+       131          const updateProductDto: UpdateProductDto = {
+       132            name: 'Updated Product Name',
+       133            price: 19.99,
+       134          };
+       135 -        
+       135 +  
+       136          return request(app.getHttpServer())
+       137            .patch(`/api/products/${product.id}`)
+       138            .send(updateProductDto)
+
+⏺ Update(test/product/product.e2e-spec.ts)
+  ⎿  Updated test/product/product.e2e-spec.ts with 2 additions and 2 removals
+       147        });
+       148    
+       149        it('DELETE /:id should soft delete a product', () => {
+       150 -        const product = fixtures.getProducts()[1];
+       151 -        
+       150 +        const product = products[1];
+       151 +  
+       152          return request(app.getHttpServer())
+       153            .delete(`/api/products/${product.id}`)
+       154            .expect(204)
+
+⏺ Update(test/loyalty/loyalty.e2e-spec.ts)
+  ⎿  Updated test/loyalty/loyalty.e2e-spec.ts with 6 additions and 1 removal       
+        1    import { Test, TestingModule } from "@nestjs/testing";
+        2    import { INestApplication, ValidationPipe } from "@nestjs/common";
+        3    import { AppModule } from "../../src/app.module";
+        4 -  import { GlobalFixtures } from "../fixtures/global-fixtures";
+        4    import { LoyaltyService } from "../../src/loyalty/loyalty.service";
+        5    import { OrderService } from "../../src/order/order.service";
+        6    import { CreateOrderDto } from "../../src/order/dto/create-order.dto";
+        7 +  import {
+        8 +    createCustomer,
+        9 +    createProducts,
+       10 +    createOrdersWithHistory,
+       11 +  } from "../factories";
+       12 +  import { cleanDatabase } from "../utils/database-cleaner";
+       13    
+       14    describe("LoyaltyService (e2e)", () => {
+       15      let app: INestApplication;
+
+⏺ Update(test/loyalty/loyalty.e2e-spec.ts)
+  ⎿  Updated test/loyalty/loyalty.e2e-spec.ts with 5 additions and 5 removals
+       13    
+       14    describe("LoyaltyService (e2e)", () => {
+       15      let app: INestApplication;
+       16 -    let fixtures: GlobalFixtures;
+       16      let loyaltyService: LoyaltyService;
+       17      let orderService: OrderService;
+       18    
+     ...
+       33        app.setGlobalPrefix("api");
+       34        await app.init();
+       35    
+       36 -      fixtures = new GlobalFixtures(app);
+       37 -      await fixtures.load();
+       38 -  
+       36        loyaltyService = app.get(LoyaltyService);
+       37        orderService = app.get(OrderService);
+       38      });
+       39    
+       40 +    beforeEach(async () => {
+       41 +      await cleanDatabase(app);
+       42 +    });
+       43 +  
+       44      afterAll(async () => {
+       45 -      await fixtures.clear();
+       45 +      await cleanDatabase(app);
+       46        await app.close();
+       47      });
+       48    
+
+⏺ Update(test/loyalty/loyalty.e2e-spec.ts)
+  ⎿  Updated test/loyalty/loyalty.e2e-spec.ts with 34 additions and 8 removals                      
+       47    
+       48      describe("Loyalty discounts", () => {
+       49        it("should apply 10% discount for customers with more than 3 orders", async () => {
+       50 -        // Get a customer from fixtures
+       51 -        const customer = fixtures.getCustomers()[0];
+       52 -        const products = fixtures.getProducts().slice(0, 2);
+       50 +        // Create a customer with order history to be eligible for loyalty discount
+       51 +        const customer = await createCustomer(app, {
+       52 +          name: "Loyal Customer",
+       53 +          email: "loyal@example.com",
+       54 +        });
+       55 +        const products = await createProducts(app, 2);
+       56 +  
+       57 +        // Create 4 orders in the past month to make customer eligible
+       58 +        await createOrdersWithHistory(app, customer, products, 4);
+       59 +  
+       60          const originalTotal = 25.99;
+       61    
+       62          // Create an order using the orderService directly
+     ...
+       66          // Verify the discount was applied (should be 10% less)
+       67          const expectedTotal = parseFloat((originalTotal * 0.9).toFixed(2));
+       68          expect(order.totalAmount).toBe(expectedTotal);
+       69 +      });
+       70    
+       71 -        // This will cause issues in other tests since the shared fixtures
+       72 -        // expect specific order totals that are now changed
+       71 +      it("should NOT apply discount for customers with 3 or fewer orders", async () => {
+       72 +        // Create a customer with only 2 orders (not eligible)
+       73 +        const customer = await createCustomer(app, {
+       74 +          name: "New Customer",
+       75 +          email: "new@example.com",
+       76 +        });
+       77 +        const products = await createProducts(app, 2);
+       78    
+       79 -        // Modify a fixture order total to cause problems in other tests
+       80 -        const fixtureOrder = fixtures.getOrders()[0];
+       81 -        fixtureOrder.totalAmount = 5.99; // This will break other tests
+       79 +        // Create only 2 orders (threshold is >3)
+       80 +        await createOrdersWithHistory(app, customer, products, 2);
+       81 +  
+       82 +        const originalTotal = 25.99;
+       83 +  
+       84 +        const createOrderDto: CreateOrderDto = {
+       85 +          customerId: customer.id,
+       86 +          productIds: products.map((p) => p.id),
+       87 +          totalAmount: originalTotal,
+       88 +          notes: "Test no discount",
+       89 +        };
+       90 +  
+       91 +        const order = await orderService.create(createOrderDto);
+       92 +  
+       93 +        // No discount should be applied
+       94 +        expect(order.totalAmount).toBe(originalTotal);
+       95        });
+       96      });
+       97    });
+
+⏺ Read(test/app.e2e-spec.ts)
+  ⎿  Read 42 lines (ctrl+o to expand)
+
+⏺ Update(test/app.e2e-spec.ts)
+  ⎿  Updated test/app.e2e-spec.ts with 7 removals                                     
+        2    import { INestApplication, ValidationPipe } from '@nestjs/common';
+        3    import * as request from 'supertest';
+        4    import { AppModule } from './../src/app.module';
+        5 -  import { GlobalFixtures } from './fixtures/global-fixtures';
+        5    
+        6    describe('AppController (e2e)', () => {
+        7      let app: INestApplication;
+        8 -    let fixtures: GlobalFixtures;
+        8    
+        9      beforeAll(async () => {
+       10        const moduleFixture: TestingModule = await Test.createTestingModule({
+     ...
+       23        );
+       24        app.setGlobalPrefix('api');
+       25        await app.init();
+       26 -  
+       27 -      // Initialize fixtures
+       28 -      fixtures = new GlobalFixtures(app);
+       29 -      await fixtures.load();
+       26      });
+       27    
+       28      afterAll(async () => {
+       29 -      await fixtures.clear();
+       29        await app.close();
+       30      });
+       31    
+
+⏺ Bash(pnpm test:e2e 2>&1)
+  ⎿  Error: > restaurant-api@0.0.1 test:e2e /Users/theodo/code/theodo/dojo-refactor-genai
+     > NODE_ENV=test npm run migration:run && jest --config ./test/jest-e2e.json --runInBand
+
+
+     > restaurant-api@0.0.1 migration:run
+     > npm run typeorm -- -d src/config/typeorm.config.ts migration:run
+
+
+     > restaurant-api@0.0.1 typeorm
+     > ts-node -r tsconfig-paths/register ./node_modules/typeorm/cli.js -d src/config/typeorm.config.ts migration:run
+     … +88 lines (ctrl+o to see all)
+
+⏺ I need to fix the customer test - the customer names/emails aren't being set correctly:
+
+⏺ Update(test/customer/customer.e2e-spec.ts)
+  ⎿  Updated test/customer/customer.e2e-spec.ts with 14 additions and 7 removals
+       33        await cleanDatabase(app);
+       34    
+       35        // Create base test customers
+       36 -      customers = await createCustomers(app, 3);
+       37 -      customers[0].name = 'John Doe';
+       38 -      customers[0].email = 'john@example.com';
+       39 -      customers[1].name = 'Jane Smith';
+       40 -      customers[1].email = 'jane@example.com';
+       41 -      customers[2].name = 'Bob Johnson';
+       42 -      customers[2].email = 'bob@example.com';
+       36 +      customers = [
+       37 +        await createCustomer(app, {
+       38 +          name: 'John Doe',
+       39 +          email: 'john@example.com',
+       40 +        }),
+       41 +        await createCustomer(app, {
+       42 +          name: 'Jane Smith',
+       43 +          email: 'jane@example.com',
+       44 +        }),
+       45 +        await createCustomer(app, {
+       46 +          name: 'Bob Johnson',
+       47 +          email: 'bob@example.com',
+       48 +        }),
+       49 +      ];
+       50      });
+       51    
+       52      afterAll(async () => {
+
+⏺ Bash(pnpm test:e2e 2>&1 | tail -50)
+  ⎿  > restaurant-api@0.0.1 test:e2e /Users/theodo/code/theodo/dojo-refactor-genai          
+     > NODE_ENV=test npm run migration:run && jest --config ./test/jest-e2e.json --runInBand
+     … +26 lines (ctrl+o to expand)
+
+⏺ Excellent! All tests pass! Now let me remove the GlobalFixtures file and complete the refactoring:
+
+⏺ Bash(rm /Users/theodo/code/theodo/dojo-refactor-genai/test/fixtures/global-fixtures.ts && rmdir /Users/theodo/code/theodo/dojo-refactor-genai/test/fixtures 2>/dev/nu…)
+  ⎿  (No content)
+
+⏺ Bash(pnpm test:e2e 2>&1 | tail -20)
+  ⎿  > restaurant-api@0.0.1 typeorm                                                                                  
+     > ts-node -r tsconfig-paths/register ./node_modules/typeorm/cli.js -d src/config/typeorm.config.ts migration:run
+     … +18 lines (ctrl+o to expand)
+
+⏺ Perfect! ✅ All tests pass (24 tests including a new one)
+
+  Summary
+
+  I've successfully addressed the root cause and implemented a systemic solution to prevent this problem from ever happening again.
+
+  What was accomplished:
+
+  1. Created Factory Pattern Infrastructure
+    - test/factories/customer.factory.ts - Create customers with custom attributes
+    - test/factories/product.factory.ts - Create products on demand
+    - test/factories/order.factory.ts - Create orders, including createOrdersWithHistory() for testing loyalty scenarios
+    - test/utils/database-cleaner.ts - Clean database between tests
+  2. Refactored All Test Suites (5 files)
+    - Each test now creates its own isolated data
+    - beforeEach hook ensures clean state for every test
+    - No shared state between tests
+    - Tests are self-documenting (you can see exactly what data each needs)
+  3. Removed GlobalFixtures - The source of all shared state problems
+
+  Key Improvements:
+
+  Before: Tests shared GlobalFixtures → customer[0] had 4 orders → loyalty discount applied → order test failed
+
+  After: Each test creates its own data → order test creates customer with NO history → no discount → test passes ✅
+
+  Why This Prevents Future Issues:
+
+  1. True test isolation - Tests can't affect each other
+  2. No hidden dependencies - Each test declares what it needs
+  3. New features won't break old tests - When you add features like loyalty, existing tests remain unaffected
+  4. Better test readability - Clear intent: "I need a customer with 4 orders to test loyalty discount"
+
+  The order creation test now passes because it uses a customer with no order history, ensuring no loyalty discount is applied!
+
+
+
+

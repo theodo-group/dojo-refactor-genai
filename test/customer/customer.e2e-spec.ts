@@ -2,13 +2,15 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import * as request from 'supertest';
 import { AppModule } from '../../src/app.module';
-import { GlobalFixtures } from '../fixtures/global-fixtures';
 import { CreateCustomerDto } from '../../src/customer/dto/create-customer.dto';
 import { UpdateCustomerDto } from '../../src/customer/dto/update-customer.dto';
+import { createCustomer, createCustomers } from '../factories';
+import { cleanDatabase } from '../utils/database-cleaner';
+import { Customer } from '../../src/entities/customer.entity';
 
 describe('CustomerController (e2e)', () => {
   let app: INestApplication;
-  let fixtures: GlobalFixtures;
+  let customers: Customer[];
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -25,14 +27,30 @@ describe('CustomerController (e2e)', () => {
     );
     app.setGlobalPrefix('api');
     await app.init();
+  });
 
-    // Initialize fixtures
-    fixtures = new GlobalFixtures(app);
-    await fixtures.load();
+  beforeEach(async () => {
+    await cleanDatabase(app);
+
+    // Create base test customers
+    customers = [
+      await createCustomer(app, {
+        name: 'John Doe',
+        email: 'john@example.com',
+      }),
+      await createCustomer(app, {
+        name: 'Jane Smith',
+        email: 'jane@example.com',
+      }),
+      await createCustomer(app, {
+        name: 'Bob Johnson',
+        email: 'bob@example.com',
+      }),
+    ];
   });
 
   afterAll(async () => {
-    await fixtures.clear();
+    await cleanDatabase(app);
     await app.close();
   });
 
@@ -43,8 +61,8 @@ describe('CustomerController (e2e)', () => {
         .expect(200)
         .expect((res) => {
           expect(Array.isArray(res.body)).toBe(true);
-          expect(res.body.length).toBe(fixtures.getCustomers().length);
-          
+          expect(res.body.length).toBe(3);
+
           // Check if all customers are returned
           const emails = res.body.map(customer => customer.email);
           expect(emails).toContain('john@example.com');
@@ -54,8 +72,8 @@ describe('CustomerController (e2e)', () => {
     });
 
     it('GET /:id should return customer by id', () => {
-      const customer = fixtures.getCustomers()[0];
-      
+      const customer = customers[0];
+
       return request(app.getHttpServer())
         .get(`/api/customers/${customer.id}`)
         .expect(200)
@@ -106,12 +124,12 @@ describe('CustomerController (e2e)', () => {
     });
 
     it('PATCH /:id should update a customer', () => {
-      const customer = fixtures.getCustomers()[0];
+      const customer = customers[0];
       const updateCustomerDto: UpdateCustomerDto = {
         name: 'Updated Name',
         phone: 'updated-phone',
       };
-      
+
       return request(app.getHttpServer())
         .patch(`/api/customers/${customer.id}`)
         .send(updateCustomerDto)
@@ -126,8 +144,8 @@ describe('CustomerController (e2e)', () => {
     });
 
     it('DELETE /:id should soft delete a customer', () => {
-      const customer = fixtures.getCustomers()[1];
-      
+      const customer = customers[1];
+
       return request(app.getHttpServer())
         .delete(`/api/customers/${customer.id}`)
         .expect(204)

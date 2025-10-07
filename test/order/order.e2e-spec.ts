@@ -2,13 +2,23 @@ import { Test, TestingModule } from "@nestjs/testing";
 import { INestApplication, ValidationPipe } from "@nestjs/common";
 import * as request from "supertest";
 import { AppModule } from "../../src/app.module";
-import { GlobalFixtures } from "../fixtures/global-fixtures";
 import { CreateOrderDto } from "../../src/order/dto/create-order.dto";
 import { OrderStatus } from "../../src/entities/order.entity";
+import {
+  createCustomer,
+  createProduct,
+  createProducts,
+  createOrder,
+  createOrdersWithHistory,
+} from "../factories";
+import { cleanDatabase } from "../utils/database-cleaner";
+import { Customer } from "../../src/entities/customer.entity";
+import { Product } from "../../src/entities/product.entity";
 
 describe("OrderController (e2e)", () => {
   let app: INestApplication;
-  let fixtures: GlobalFixtures;
+  let customer: Customer;
+  let products: Product[];
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -25,25 +35,45 @@ describe("OrderController (e2e)", () => {
     );
     app.setGlobalPrefix("api");
     await app.init();
+  });
 
-    // Initialize fixtures
-    fixtures = new GlobalFixtures(app);
-    await fixtures.load();
+  beforeEach(async () => {
+    // Clean database before each test for isolation
+    await cleanDatabase(app);
+
+    // Create base test data
+    customer = await createCustomer(app, {
+      name: "John Doe",
+      email: "john@example.com",
+    });
+    products = await createProducts(app, 3);
   });
 
   afterAll(async () => {
-    await fixtures.clear();
+    await cleanDatabase(app);
     await app.close();
   });
 
   describe("/api/orders", () => {
-    it("GET / should return all orders", () => {
+    it("GET / should return all orders", async () => {
+      // Create some test orders
+      await createOrder(app, {
+        customer,
+        products: [products[0]],
+        totalAmount: 10.0,
+      });
+      await createOrder(app, {
+        customer,
+        products: [products[1]],
+        totalAmount: 20.0,
+      });
+
       return request(app.getHttpServer())
         .get("/api/orders")
         .expect(200)
         .expect((res) => {
           expect(Array.isArray(res.body)).toBe(true);
-          expect(res.body.length).toBe(fixtures.getOrders().length);
+          expect(res.body.length).toBe(2);
 
           // Check if each order has customer and products
           res.body.forEach((order) => {
@@ -54,20 +84,40 @@ describe("OrderController (e2e)", () => {
         });
     });
 
-    it("GET /?status=pending should filter orders by status", () => {
+    it("GET /?status=pending should filter orders by status", async () => {
+      // Create orders with different statuses
+      await createOrder(app, {
+        customer,
+        products: [products[0]],
+        totalAmount: 10.0,
+        status: OrderStatus.PENDING,
+      });
+      await createOrder(app, {
+        customer,
+        products: [products[1]],
+        totalAmount: 20.0,
+        status: OrderStatus.DELIVERED,
+      });
+
       return request(app.getHttpServer())
         .get("/api/orders?status=pending")
         .expect(200)
         .expect((res) => {
           expect(Array.isArray(res.body)).toBe(true);
+          expect(res.body.length).toBe(1);
           res.body.forEach((order) => {
             expect(order.status).toBe("pending");
           });
         });
     });
 
-    it("GET /:id should return order by id", () => {
-      const order = fixtures.getOrders()[0];
+    it("GET /:id should return order by id", async () => {
+      const order = await createOrder(app, {
+        customer,
+        products: [products[0]],
+        totalAmount: 15.0,
+        status: OrderStatus.PENDING,
+      });
 
       return request(app.getHttpServer())
         .get(`/api/orders/${order.id}`)
@@ -75,19 +125,41 @@ describe("OrderController (e2e)", () => {
         .expect((res) => {
           expect(res.body.id).toBe(order.id);
           expect(res.body.status).toBe(order.status);
-          expect(res.body.customer.id).toBe(order.customer.id);
+          expect(res.body.customer.id).toBe(customer.id);
           expect(Array.isArray(res.body.products)).toBe(true);
         });
     });
 
-    it("GET /customer/:customerId should return orders for a customer", () => {
-      const customer = fixtures.getCustomers()[0];
+    it("GET /customer/:customerId should return orders for a customer", async () => {
+      // Create orders for this customer
+      await createOrder(app, {
+        customer,
+        products: [products[0]],
+        totalAmount: 10.0,
+      });
+      await createOrder(app, {
+        customer,
+        products: [products[1]],
+        totalAmount: 20.0,
+      });
+
+      // Create order for different customer
+      const otherCustomer = await createCustomer(app, {
+        name: "Jane Doe",
+        email: "jane@example.com",
+      });
+      await createOrder(app, {
+        customer: otherCustomer,
+        products: [products[2]],
+        totalAmount: 30.0,
+      });
 
       return request(app.getHttpServer())
         .get(`/api/orders/customer/${customer.id}`)
         .expect(200)
         .expect((res) => {
           expect(Array.isArray(res.body)).toBe(true);
+          expect(res.body.length).toBe(2);
           res.body.forEach((order) => {
             expect(order.customer.id).toBe(customer.id);
           });
@@ -95,12 +167,10 @@ describe("OrderController (e2e)", () => {
     });
 
     it("POST / should create a new order", () => {
-      const customer = fixtures.getCustomers()[0];
-      const products = fixtures.getProducts().slice(0, 2);
-
+      // Use customer with NO order history to avoid loyalty discount
       const createOrderDto: CreateOrderDto = {
         customerId: customer.id,
-        productIds: products.map((p) => p.id),
+        productIds: products.slice(0, 2).map((p) => p.id),
         totalAmount: 30.5,
         notes: "Test order notes",
       };
@@ -114,14 +184,17 @@ describe("OrderController (e2e)", () => {
           expect(res.body.totalAmount).toBe(createOrderDto.totalAmount);
           expect(res.body.notes).toBe(createOrderDto.notes);
           expect(res.body.customer.id).toBe(customer.id);
-          expect(res.body.products.length).toBe(products.length);
+          expect(res.body.products.length).toBe(2);
         });
     });
 
-    it("PATCH /:id/status should update order status", () => {
-      const order = fixtures
-        .getOrders()
-        .find((o) => o.status === OrderStatus.READY);
+    it("PATCH /:id/status should update order status", async () => {
+      const order = await createOrder(app, {
+        customer,
+        products: [products[0]],
+        totalAmount: 15.0,
+        status: OrderStatus.READY,
+      });
       const newStatus = OrderStatus.DELIVERED;
 
       return request(app.getHttpServer())
@@ -134,10 +207,13 @@ describe("OrderController (e2e)", () => {
         });
     });
 
-    it("PATCH /:id/status should prevent invalid status transitions", () => {
-      const order = fixtures
-        .getOrders()
-        .find((o) => o.status === OrderStatus.DELIVERED);
+    it("PATCH /:id/status should prevent invalid status transitions", async () => {
+      const order = await createOrder(app, {
+        customer,
+        products: [products[0]],
+        totalAmount: 15.0,
+        status: OrderStatus.DELIVERED,
+      });
       const newStatus = OrderStatus.PREPARING;
 
       return request(app.getHttpServer())
@@ -146,14 +222,13 @@ describe("OrderController (e2e)", () => {
         .expect(400);
     });
 
-    it("DELETE /:id should cancel an order", () => {
-      const order = fixtures
-        .getOrders()
-        .find(
-          (o) =>
-            o.status === OrderStatus.PENDING ||
-            o.status === OrderStatus.PREPARING
-        );
+    it("DELETE /:id should cancel an order", async () => {
+      const order = await createOrder(app, {
+        customer,
+        products: [products[0]],
+        totalAmount: 15.0,
+        status: OrderStatus.PENDING,
+      });
 
       return request(app.getHttpServer())
         .delete(`/api/orders/${order.id}`)
