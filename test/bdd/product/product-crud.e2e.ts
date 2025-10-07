@@ -16,6 +16,7 @@ import {
   thenResponseBodyContainsItemWithProperty,
   thenResponseBodyDoesNotContainItemWithProperty,
   thenResponseBodyHasProperty,
+  thenResponseBodyHasPropertyDefined,
   thenResponseBodyPropertyEquals,
   thenStoreResponseBodyAs,
   thenResponseMessageContains,
@@ -73,7 +74,7 @@ defineFeature(feature, (test) => {
     whenApiIsCalledWithBody(when, context);
     thenResponseStatusCode(then, context);
     thenResponseBodyHasProperty(then, context);
-    thenResponseBodyHasProperty(then, context);
+    thenResponseBodyHasPropertyDefined(then, context);
     thenStoreResponseBodyAs(then, context);
   });
 

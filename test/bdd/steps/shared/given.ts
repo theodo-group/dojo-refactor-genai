@@ -179,12 +179,26 @@ export const givenTheOrderExistsWithStatus = (
         throw new Error(`Product ${productName} not found in context`);
       }
 
+      // Map lowercase status string to OrderStatus enum
+      const statusMap: Record<string, OrderStatus> = {
+        pending: OrderStatus.PENDING,
+        preparing: OrderStatus.PREPARING,
+        ready: OrderStatus.READY,
+        delivered: OrderStatus.DELIVERED,
+        cancelled: OrderStatus.CANCELLED,
+      };
+
+      const orderStatus = statusMap[status.toLowerCase()];
+      if (!orderStatus) {
+        throw new Error(`Invalid order status: ${status}`);
+      }
+
       const order = await context.orderRepository.save({
         customer,
         customerId: customer.id,
         products: [product],
         totalAmount: product.price,
-        status: status.toUpperCase() as OrderStatus,
+        status: orderStatus,
         notes: `Order ${orderName}`,
       });
 

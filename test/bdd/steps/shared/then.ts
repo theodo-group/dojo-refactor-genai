@@ -32,7 +32,12 @@ export const thenResponseBodyHasProperty = (
     /^the response body should have property "([^"]*)" with value "([^"]*)"$/,
     (property: string, value: string) => {
       const body = context.getResponseBody();
-      expect(body[property]).toBe(value);
+      // Convert string value to appropriate type
+      let expectedValue: any = value;
+      if (value === "true") expectedValue = true;
+      if (value === "false") expectedValue = false;
+      if (!isNaN(Number(value)) && value !== "") expectedValue = Number(value);
+      expect(body[property]).toBe(expectedValue);
     }
   );
 };
@@ -309,7 +314,21 @@ export const thenResponseBodyPropertyEquals = (
         }
       );
 
-      expect(body[property]).toBe(processedValue);
+      // Convert expected value to match the type of the actual value
+      let finalValue: any = processedValue;
+      const actualValue = body[property];
+
+      if (typeof actualValue === "boolean") {
+        if (processedValue === "true") finalValue = true;
+        if (processedValue === "false") finalValue = false;
+      } else if (typeof actualValue === "number") {
+        if (!isNaN(Number(processedValue)) && processedValue !== "") {
+          finalValue = Number(processedValue);
+        }
+      }
+      // Otherwise keep as string
+
+      expect(actualValue).toBe(finalValue);
     }
   );
 };
